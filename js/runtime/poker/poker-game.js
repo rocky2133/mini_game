@@ -820,51 +820,44 @@ export default class PokerGame {
              ctx.textBaseline = 'middle';
              ctx.fillText(p.bet, cx, y + h + 8 * scale);
         }
-    }
+
+        // Dealer Button
+        const sbIndex = this.room.smallBlindIndex;
         if (typeof sbIndex === 'number') {
             let dIndex = (sbIndex - 1 + this.room.players.length) % this.room.players.length;
-            if (index === dIndex) {
+            if (originalIndex === dIndex) {
+                // Position Dealer Button (Top Left of seat?)
+                const dX = x - 5;
+                const dY = y - 5;
                 ctx.fillStyle = '#FFF';
                 ctx.beginPath();
-                ctx.arc(left, top, 8, 0, Math.PI * 2);
+                ctx.arc(dX, dY, 8 * scale, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.fillStyle = '#000';
-                ctx.font = 'bold 10px Arial';
-                ctx.fillText('D', left, top);
+                ctx.font = `bold ${Math.floor(10 * scale)}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('D', dX, dY);
             }
         }
 
-        // Cards
-        // If Me -> Large Cards above seat
-        // If Others -> Small Cards to the right of seat (or hidden)
+        // Cards (for Others)
+        // Me is handled in renderSelfInfo, renderSeat is only for others
         const isShowdown = (this.room.game && this.room.game.stage === 'showdown' && p.status === 'playing');
+        
+        if (p.status === 'playing') {
+            const cardW = 30 * scale; 
+            const cardH = 42 * scale;
+            const cardX = x + w + 5 * scale; // Right of seat
+            const cardY = y + (h - cardH) / 2;
 
-        if (isMe) {
-            const cardW = 60;
-            const cardH = 84;
-            const cardY = top - cardH - 10;
-            const cardX = x - cardW - 2;
-
-            if (p.hand) {
+            if (isShowdown && p.hand) {
                 this.drawCard(ctx, p.hand[0], cardX, cardY, cardW, cardH);
-                this.drawCard(ctx, p.hand[1], cardX + cardW + 4, cardY, cardW, cardH);
-            }
-        } else {
-            // Others
-            if (p.status === 'playing') {
-                const cardW = 30; // Small
-                const cardH = 42;
-                const cardX = left + seatW + 5; // Right of seat
-                const cardY = top + (seatH - cardH) / 2;
-
-                if (isShowdown && p.hand) {
-                    this.drawCard(ctx, p.hand[0], cardX, cardY, cardW, cardH);
-                    this.drawCard(ctx, p.hand[1], cardX + cardW + 2, cardY, cardW, cardH);
-                } else {
-                    // Back
-                    this.drawCardBack(ctx, cardX, cardY, cardW, cardH);
-                    this.drawCardBack(ctx, cardX + 10, cardY, cardW, cardH); // Stacked slightly
-                }
+                this.drawCard(ctx, p.hand[1], cardX + cardW + 2 * scale, cardY, cardW, cardH);
+            } else {
+                // Back
+                this.drawCardBack(ctx, cardX, cardY, cardW, cardH);
+                this.drawCardBack(ctx, cardX + 10 * scale, cardY, cardW, cardH); // Stacked slightly
             }
         }
     }
