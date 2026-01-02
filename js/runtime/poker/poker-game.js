@@ -4,25 +4,30 @@ import AIManager from '../ai-manager'; // Import AI Manager
 
 const THEME = {
     colors: {
-        bg: '#0F5132', 
-        bgInner: '#1a5e3a',
-        bgOuter: '#0a3622',
-        accent: '#FFD700', // Gold
-        primary: '#28a745', // Green (Call)
-        danger: '#dc3545', // Red (Fold/Exit)
-        warning: '#fd7e14', // Orange (Raise)
+        bg: '#004d40', // Dark Green Felt
+        bgInner: '#004d40',
+        bgOuter: '#00251a',
+        accent: '#FFC107', // Amber/Gold for Active Border
+        primary: '#4CAF50', // Green (Call/Check)
+        danger: '#F44336', // Red (All-in/Exit)
+        warning: '#FF9800', // Orange (Raise/Pot)
+        secondary: '#607D8B', // Blue Grey (Fold)
         text: '#FFFFFF',
-        textSecondary: '#e0e0e0',
-        cardBack: '#B22222',
+        textSecondary: '#CFD8DC', // Light Blue Grey
+        panelBg: '#B0BEC5', // Light Blue Grey for Player Cards
+        panelBgDark: 'rgba(38, 50, 56, 0.85)', // Dark Blue Grey for Self/Folded
+        chipBg: '#FF6F00', // Dark Amber for Chips Pill
+        cardBack: '#3F51B5', // Indigo
         overlay: 'rgba(0,0,0,0.7)',
-        panel: 'rgba(0,0,0,0.3)'
+        placeholder: '#546E7A' // Blue Grey for empty slots
     },
     fonts: {
         xs: '10px Arial',
         sm: '12px Arial',
-        md: '14px Arial',
-        lg: 'bold 16px Arial',
-        xl: 'bold 24px Arial'
+        md: 'bold 14px Arial',
+        lg: 'bold 18px Arial',
+        xl: 'bold 24px Arial',
+        pot: 'bold 28px Arial'
     }
 };
 
@@ -369,56 +374,54 @@ export default class PokerGame {
     renderTopBanner(ctx, rect) {
         const { x, y, w, h } = rect;
         
-        // Gradient Background
-        const grad = ctx.createLinearGradient(0, y, 0, y + h);
-        grad.addColorStop(0, 'rgba(0,0,0,0.6)');
-        grad.addColorStop(1, 'transparent');
-        ctx.fillStyle = grad;
-        ctx.fillRect(x, y, w, h);
+        // No Gradient Background - Clean look like reference
+        // Just minimal top bar overlay if needed, or fully transparent
+        // ctx.fillStyle = 'rgba(0,0,0,0.2)';
+        // ctx.fillRect(x, y, w, h);
 
-        // Exit Button (Top Left)
-        const btnR = 18;
-        const btnX = x + 25;
-        const btnY = y + h / 2; // Vertically centered in banner
+        // 1. Room Info (Top Left)
+        if (this.room) {
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            
+            const startX = x + 20;
+            const startY = y + 15;
+            const lineHeight = 20;
+            
+            const sbVal = this.room.smallBlind || 100;
+            const bbVal = this.room.bigBlind || 200;
+            
+            ctx.font = 'bold 14px Arial';
+            ctx.fillStyle = THEME.colors.text;
+            ctx.fillText(`SB: ${sbVal}`, startX, startY);
+            ctx.fillText(`BB: ${bbVal}`, startX, startY + lineHeight);
+        }
+
+        // 2. Exit Button (Top Right)
+        const btnR = 16;
+        const btnX = x + w - 30;
+        const btnY = y + 30; // Roughly aligned with info
         
         this.exitBtnCenter = { x: btnX, y: btnY, r: btnR };
 
-        // Button Background
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+        // Button Background (Red Circle with low opacity or solid?)
+        // Reference image has a dark circle with Red X, or Red Circle with White X?
+        // Let's do Red Circle (muted) with White X
+        ctx.fillStyle = 'rgba(244, 67, 54, 0.8)'; // Red
         ctx.beginPath();
         ctx.arc(btnX, btnY, btnR, 0, Math.PI * 2);
         ctx.fill();
         
-        // Icon (Back Arrow or X)
-        ctx.strokeStyle = THEME.colors.text;
-        ctx.lineWidth = 2;
+        // Icon (X)
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 2.5;
         ctx.beginPath();
-        // Simple 'X'
-        const iconSize = 8;
+        const iconSize = 6;
         ctx.moveTo(btnX - iconSize, btnY - iconSize);
         ctx.lineTo(btnX + iconSize, btnY + iconSize);
         ctx.moveTo(btnX + iconSize, btnY - iconSize);
         ctx.lineTo(btnX - iconSize, btnY + iconSize);
         ctx.stroke();
-
-        // Room Info (Next to Exit Button)
-        if (this.room) {
-            ctx.fillStyle = THEME.colors.text;
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'middle';
-            ctx.font = THEME.fonts.md;
-            
-            const sbVal = this.room.smallBlind || 100;
-            const bbVal = this.room.bigBlind || 200;
-            
-            // Separator
-            ctx.fillStyle = 'rgba(255,255,255,0.3)';
-            ctx.fillRect(btnX + btnR + 15, btnY - 10, 1, 20);
-
-            // Text
-            ctx.fillStyle = THEME.colors.text;
-            ctx.fillText(`Blinds: ${sbVal}/${bbVal}`, btnX + btnR + 30, btnY);
-        }
     }
 
     getRelativePlayers() {
@@ -552,219 +555,197 @@ export default class PokerGame {
     }
 
     renderPlayerBlock(ctx, p, x, y, w, h, originalIndex) {
-        // Design Specs:
-        // - No overlap
-        // - W: 20%, H: 10%
-        // - Content Priority: Avatar, Name, Chips, Action Label, Fold Marker
+        // Design Specs (Refined):
+        // - Rounded Rect Card Background
+        // - Active Border (Yellow)
+        // - Status Badges (Top Right, overlapping)
+        // - Chips Pill (Orange)
         
-        // 1. Folded State (Semi-transparent)
-        const isFolded = (p.status === 'folded');
-        ctx.save();
-        if (isFolded) {
-            ctx.globalAlpha = 0.5;
-        }
-
-        // Debug: Draw Block Boundary (Optional, remove later)
-        // ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-        // ctx.strokeRect(x, y, w, h);
-
-        const centerX = x + w / 2;
-        const centerY = y + h / 2;
-        
-        // 2. Avatar (Center, Large)
-        // Max radius that fits height with padding
-        // Available Height ~ 60% for Avatar?
-        // Layout:
-        // Top: Action Label (Overlay)
-        // Middle: Avatar
-        // Bottom: Name & Chips
-        
-        const r = Math.min(w, h) * 0.35; 
-        const avY = centerY - 10; // Shift up slightly to leave room for text
-        
-        // Active Player Glow
+        const cx = x + w / 2;
+        const cy = y + h / 2;
         const isCurrent = (this.room.game && this.room.game.currentPlayerIndex === originalIndex);
+        const isFolded = (p.status === 'folded');
+
+        // 1. Card Background
+        ctx.save();
+        
+        if (isFolded) {
+             ctx.fillStyle = 'rgba(38, 50, 56, 0.6)'; // Darker, transparent
+        } else {
+             ctx.fillStyle = THEME.colors.panelBg; // Light Blue Grey
+        }
+        
+        // Shadow for depth
+        ctx.shadowColor = 'rgba(0,0,0,0.3)';
+        ctx.shadowBlur = 8;
+        ctx.shadowOffsetY = 4;
+        
+        this.roundRect(ctx, x, y, w, h, 12, true, false);
+        ctx.shadowBlur = 0; // Reset shadow
+        ctx.shadowOffsetY = 0;
+
+        // 2. Active Border (Yellow)
         if (isCurrent) {
-            ctx.shadowColor = THEME.colors.accent;
-            ctx.shadowBlur = 15;
-            ctx.beginPath();
-            ctx.arc(centerX, avY, r + 2, 0, Math.PI * 2);
             ctx.strokeStyle = THEME.colors.accent;
             ctx.lineWidth = 3;
-            ctx.stroke();
-            ctx.shadowBlur = 0;
+            this.roundRect(ctx, x, y, w, h, 12, false, true);
+            
+            // Optional: Glow
+            // ctx.shadowColor = THEME.colors.accent;
+            // ctx.shadowBlur = 10;
+            // ctx.stroke();
+            // ctx.shadowBlur = 0;
         }
+        ctx.restore();
 
-        // Avatar Image
+        // 3. Avatar (Top Center)
+        // Radius relative to height, but keep it reasonable
+        const avR = h * 0.28; 
+        const avY = y + 15 + avR; // Top padding 15
+        
         ctx.save();
         ctx.beginPath();
-        ctx.arc(centerX, avY, r, 0, Math.PI * 2);
+        ctx.arc(cx, avY, avR, 0, Math.PI * 2);
         ctx.clip();
-        ctx.fillStyle = '#333';
-        ctx.fillRect(centerX - r, avY - r, r * 2, r * 2);
         
         if (p.avatarUrl && this.avatarImages[p.avatarUrl]?.loaded) {
-            ctx.drawImage(this.avatarImages[p.avatarUrl].img, centerX - r, avY - r, r * 2, r * 2);
+            ctx.drawImage(this.avatarImages[p.avatarUrl].img, cx - avR, avY - avR, avR * 2, avR * 2);
         } else {
-            ctx.fillStyle = '#adb5bd';
-            ctx.fillRect(centerX - r, avY - r, r * 2, r * 2);
+            // Placeholder Color Circle
+            ctx.fillStyle = '#78909C'; // Grey Blue
+            ctx.fillRect(cx - avR, avY - avR, avR * 2, avR * 2);
             ctx.fillStyle = '#fff';
-            ctx.font = `bold ${Math.floor(r)}px Arial`;
+            ctx.font = `bold ${Math.floor(avR)}px Arial`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(p.name.charAt(0).toUpperCase(), centerX, avY);
+            ctx.fillText(p.name.charAt(0).toUpperCase(), cx, avY);
         }
         ctx.restore();
         
-        // Avatar Border
+        // Avatar Border (White)
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(centerX, avY, r, 0, Math.PI * 2);
+        ctx.arc(cx, avY, avR, 0, Math.PI * 2);
         ctx.stroke();
-
-        // 3. Name & Chips (Bottom)
-        // Background Pill
-        const pillW = w * 0.9;
-        const pillH = h * 0.35;
-        const pillX = centerX - pillW / 2;
-        const pillY = avY + r - 5; // Overlap bottom of avatar slightly
         
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        this.roundRect(ctx, pillX, pillY, pillW, pillH, pillH / 2, true);
-        
-        // Text
-        ctx.textAlign = 'center';
-        
-        // Name
-        ctx.fillStyle = THEME.colors.textSecondary;
-        ctx.font = `${Math.floor(h * 0.15)}px Arial`; // Adaptive font
-        ctx.textBaseline = 'bottom';
-        const safeName = p.name.length > 8 ? p.name.substring(0, 6) + '..' : p.name;
-        ctx.fillText(safeName, centerX, pillY + pillH / 2 - 1);
-        
-        // Chips
-        ctx.fillStyle = THEME.colors.accent;
-        ctx.font = `bold ${Math.floor(h * 0.16)}px Arial`;
-        ctx.textBaseline = 'top';
-        ctx.fillText(`$${p.chips}`, centerX, pillY + pillH / 2 + 1);
-
-        // 4. Action Label (Top Right)
-        if (p.lastAction || p.bet > 0) {
-            let label = p.lastAction || '';
-            // If bet > 0 and action is 'bet'/'raise'/'call', show amount?
-            // User requested "Action Content" e.g. "下注", "跟注"
-            // Let's combine if there is a bet amount
-            if (p.bet > 0 && label) label += ` $${p.bet}`;
-            else if (p.bet > 0) label = `$${p.bet}`;
-            
-            if (label) {
-                ctx.font = `bold ${Math.floor(h * 0.14)}px Arial`;
-                const tm = ctx.measureText(label);
-                const tagW = tm.width + 10;
-                const tagH = h * 0.2;
-                const tagX = x + w - tagW; // Align Right
-                const tagY = y; // Align Top
-                
-                // Tag Bg
-                ctx.fillStyle = THEME.colors.primary;
-                if (p.lastAction === 'fold') ctx.fillStyle = THEME.colors.danger;
-                if (p.lastAction === 'raise') ctx.fillStyle = THEME.colors.warning;
-                
-                // Rounded corner only on bottom-left? Or full rounded
-                this.roundRect(ctx, tagX, tagY, tagW, tagH, 4, true);
-                
-                ctx.fillStyle = '#fff';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(label, tagX + tagW / 2, tagY + tagH / 2);
-            }
-        }
-        
-        // 5. Folded Marker (Visual Cross or Icon?)
+        // Folded Overlay on Avatar
         if (isFolded) {
-            // Draw a red X over the avatar? Or just relying on opacity is enough?
-            // User said "若已弃牌需显示明确的视觉标记"
-            ctx.strokeStyle = THEME.colors.danger;
-            ctx.lineWidth = 3;
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
             ctx.beginPath();
-            // X over avatar
-            const d = r * 0.7;
-            ctx.moveTo(centerX - d, avY - d);
-            ctx.lineTo(centerX + d, avY + d);
-            ctx.moveTo(centerX + d, avY - d);
-            ctx.lineTo(centerX - d, avY + d);
-            ctx.stroke();
-            
-            // Text "FOLD"
-            ctx.fillStyle = THEME.colors.danger;
-            ctx.font = 'bold 12px Arial';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            // ctx.fillText('FOLD', centerX, avY);
+            ctx.arc(cx, avY, avR, 0, Math.PI * 2);
+            ctx.fill();
         }
 
-        ctx.restore();
+        // 4. Name (Below Avatar)
+        ctx.fillStyle = '#37474F'; // Dark Text
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        const safeName = p.name.length > 8 ? p.name.substring(0, 6) + '..' : p.name;
+        ctx.fillText(safeName, cx, avY + avR + 5);
+
+        // 5. Chips Pill (Orange)
+        const chipVal = `${p.chips >= 1000 ? (p.chips/1000).toFixed(1) + 'k' : p.chips}`;
+        ctx.font = 'bold 11px Arial';
+        const tm = ctx.measureText(chipVal);
+        const pillW = tm.width + 16;
+        const pillH = 18;
+        const pillY = y + h - pillH - 8; // Bottom padding 8
+        const pillX = cx - pillW / 2;
         
-        // 6. Dealer Button (Relative to block)
-        // Check dealer index
+        ctx.fillStyle = THEME.colors.chipBg; // Orange
+        this.roundRect(ctx, pillX, pillY, pillW, pillH, 9, true);
+        
+        ctx.fillStyle = '#3E2723'; // Dark Brown Text
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(chipVal, cx, pillY + pillH/2);
+
+        // 6. Status Badge (Top Right Corner - Overlapping)
+        // Show if: Acting, All-in, Folded, or Call/Check/Raise action happened recently
+        // Priority: All-in > Folded > Action > Acting
+        
+        let badgeText = '';
+        let badgeColor = THEME.colors.secondary; // Default Grey
+        
+        if (p.status === 'folded') {
+            badgeText = 'Folded';
+            badgeColor = THEME.colors.secondary;
+        } else if (p.allIn) {
+            badgeText = 'All-in';
+            badgeColor = THEME.colors.danger;
+        } else if (p.lastAction) {
+            // Capitalize first letter
+            badgeText = p.lastAction.charAt(0).toUpperCase() + p.lastAction.slice(1);
+            if (p.lastAction === 'raise' || p.lastAction === 'bet') badgeColor = THEME.colors.warning;
+            else if (p.lastAction === 'call' || p.lastAction === 'check') badgeColor = THEME.colors.primary;
+        } else if (isCurrent) {
+            badgeText = 'Acting';
+            badgeColor = THEME.colors.accent; // Yellow
+        }
+        
+        if (badgeText) {
+             ctx.font = 'bold 10px Arial';
+             const bTm = ctx.measureText(badgeText);
+             const badgeW = bTm.width + 10;
+             const badgeH = 16;
+             // Position: Top Right corner of the card, centered on the corner point
+             // Or just inside? Image shows it hanging off the top right edge.
+             // Let's put it at x + w - badgeW/2, y - badgeH/2 ?
+             // Actually image shows it aligned with right edge, slightly sticking out top.
+             const badgeX = x + w - badgeW + 4; 
+             const badgeY = y - 6;
+             
+             ctx.fillStyle = badgeColor;
+             this.roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 4, true);
+             
+             ctx.fillStyle = '#fff';
+             if (badgeColor === THEME.colors.accent) ctx.fillStyle = '#3E2723'; // Dark text on yellow
+             
+             ctx.textAlign = 'center';
+             ctx.textBaseline = 'middle';
+             ctx.fillText(badgeText, badgeX + badgeW/2, badgeY + badgeH/2);
+        }
+
+        // 7. Dealer Button (Top Left)
          const sbIndex = this.room.smallBlindIndex;
         if (typeof sbIndex === 'number') {
             let dIndex = (sbIndex - 1 + this.room.players.length) % this.room.players.length;
             if (originalIndex === dIndex) {
-                const dR = 8;
-                const dX = x + 12; // Top Left corner
-                const dY = y + 12;
+                const dR = 7;
+                const dX = x; // On the corner?
+                const dY = y; 
+                // Let's put it slightly inside or overlapping corner
                 
                 ctx.fillStyle = '#fff';
                 ctx.beginPath();
                 ctx.arc(dX, dY, dR, 0, Math.PI * 2);
                 ctx.fill();
+                
+                ctx.strokeStyle = '#ccc';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                
                 ctx.fillStyle = '#000';
-                ctx.font = 'bold 10px Arial';
+                ctx.font = 'bold 9px Arial';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillText('D', dX, dY);
             }
         }
         
-        // 7. Cards (If showdown or cheat/admin view?)
-        // The spec didn't explicitly ask for cards in the "Player Block" for others, 
-        // but typically we show backs or hands.
-        // Let's render small cards to the right of avatar if there's space?
-        // Or overlay?
-        // Given 20% width, it's tight.
-        // Let's put cards to the right of avatar, overlapping the pill?
-        // Or maybe skip cards for others in this simplified block view unless showdown?
-        // User spec didn't mention cards for others, only "Avatar, Name, Chips, Action, Fold".
-        // But poker needs cards. I'll keep them small next to avatar if active.
-        
-        if (p.status === 'playing' && !isFolded) {
-             const cardW = 16;
-             const cardH = 22;
-             // Position: Bottom Right of Avatar
-             const cardX = centerX + r;
-             const cardY = avY;
+        // 8. Small Cards (if Showdown)
+        if (p.status === 'playing' && !isFolded && this.room.game && this.room.game.stage === 'showdown' && p.hand) {
+             // Overlap cards on bottom right of Avatar? Or right side of card?
+             // Space is tight. Let's put them small at bottom right of the card.
+             const cW = 20;
+             const cH = 28;
+             const cY = y + h - cH - 4;
+             const cX = x + w - cW * 2 - 4;
              
-             // Draw Backs
-             // this.drawCardBack(ctx, cardX, cardY, cardW, cardH);
-             // this.drawCardBack(ctx, cardX + 5, cardY, cardW, cardH);
-             // Actually, let's keep it clean as per spec. If user didn't ask for cards in block, maybe they are less important or handled elsewhere?
-             // But existing game logic shows cards. I should keep them.
-             // Let's place them neatly.
-             
-             const cX = centerX + r + 2;
-             const cY = avY - cardH/2;
-             
-             const isShowdown = (this.room.game && this.room.game.stage === 'showdown');
-             
-             if (isShowdown && p.hand) {
-                 this.drawCard(ctx, p.hand[0], cX, cY, cardW, cardH);
-                 this.drawCard(ctx, p.hand[1], cX + cardW + 2, cY, cardW, cardH);
-             } else {
-                 this.drawCardBack(ctx, cX, cY, cardW, cardH);
-                 this.drawCardBack(ctx, cX + 5, cY, cardW, cardH);
-             }
+             this.drawCard(ctx, p.hand[0], cX, cY, cW, cH);
+             this.drawCard(ctx, p.hand[1], cX + cW + 2, cY, cW, cH);
         }
     }
 
@@ -823,17 +804,36 @@ export default class PokerGame {
         const meIndex = this.room.players.findIndex(p => p.id === this.userId);
         if (meIndex === -1) return;
         const me = this.room.players[meIndex];
+        const isCurrent = (this.room.game && this.room.game.currentPlayerIndex === meIndex);
 
-        // Layout: Avatar Left, Cards Center, Info Right? 
-        // Let's do: Avatar + Info on Left. Cards in Center/Right.
+        // Panel Background
+        const panelW = w * 0.95;
+        const panelH = h * 0.85;
+        const panelX = x + (w - panelW) / 2;
+        const panelY = y + (h - panelH) / 2;
+
+        ctx.save();
+        // Dark panel for self
+        ctx.fillStyle = THEME.colors.panelBgDark;
+        // Active border if it's my turn
+        if (isCurrent) {
+            ctx.shadowColor = THEME.colors.accent;
+            ctx.shadowBlur = 15;
+            ctx.strokeStyle = THEME.colors.accent;
+            ctx.lineWidth = 2;
+            this.roundRect(ctx, panelX, panelY, panelW, panelH, 16, true, true);
+        } else {
+            this.roundRect(ctx, panelX, panelY, panelW, panelH, 16, true, false);
+        }
+        ctx.shadowBlur = 0;
+        ctx.restore();
+
+        // Layout: Avatar Left, Info Middle, Cards Right
         
-        const contentW = w * 0.9;
-        const startX = x + (w - contentW) / 2;
-        
-        // 1. Avatar (Large)
-        const avR = 30;
-        const avX = startX + avR;
-        const avY = y + h / 2;
+        // 1. Avatar (Left)
+        const avR = panelH * 0.35;
+        const avX = panelX + 30 + avR;
+        const avY = panelY + panelH / 2;
 
         ctx.save();
         ctx.beginPath();
@@ -842,49 +842,94 @@ export default class PokerGame {
         if (me.avatarUrl && this.avatarImages[me.avatarUrl]?.loaded) {
             ctx.drawImage(this.avatarImages[me.avatarUrl].img, avX - avR, avY - avR, avR * 2, avR * 2);
         } else {
-            ctx.fillStyle = '#adb5bd';
+            ctx.fillStyle = '#78909C';
             ctx.fillRect(avX - avR, avY - avR, avR * 2, avR * 2);
+            ctx.fillStyle = '#fff';
+            ctx.font = `bold ${Math.floor(avR)}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(me.name.charAt(0).toUpperCase(), avX, avY);
         }
         ctx.restore();
         
-        // Border
+        // Avatar Border
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.arc(avX, avY, avR, 0, Math.PI * 2);
         ctx.stroke();
 
-        // 2. Info (Name, Chips) - Right of Avatar
-        ctx.fillStyle = '#fff';
+        // 2. Info (Name & Chips) - Middle Left
+        const infoX = avX + avR + 20;
         ctx.textAlign = 'left';
+        
+        // Name
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 18px Arial';
         ctx.textBaseline = 'bottom';
+        ctx.fillText(me.name, infoX, avY - 4);
+        
+        // Chips (Pill)
+        const chipVal = `$${me.chips}`;
         ctx.font = 'bold 16px Arial';
-        ctx.fillText(me.name, avX + avR + 15, avY - 2);
+        const tm = ctx.measureText(chipVal);
+        const pillW = tm.width + 24;
+        const pillH = 26;
+        const pillY = avY + 4;
         
-        ctx.textBaseline = 'top';
-        ctx.fillStyle = THEME.colors.accent;
-        ctx.font = 'bold 14px Arial';
-        ctx.fillText(`$${me.chips}`, avX + avR + 15, avY + 2);
+        ctx.fillStyle = THEME.colors.chipBg;
+        this.roundRect(ctx, infoX, pillY, pillW, pillH, 13, true);
         
-        // 3. Hand Cards (Large)
+        ctx.fillStyle = '#3E2723';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(chipVal, infoX + 12, pillY + pillH/2);
+
+        // 3. Hand Cards (Right)
         if (me.hand && me.status === 'playing') {
-            const cardW = 50;
-            const cardH = 70;
-            const gap = 5;
-            // Align to right side of area
-            const handX = x + w - (cardW * 2 + gap) - 20; 
-            const handY = y + (h - cardH) / 2;
+            const cardH = panelH * 0.7; // 70% of panel height
+            const cardW = cardH * 0.7;  // Aspect ratio
+            const gap = 8;
             
-            // Glow if my turn
-            if (this.room.game && this.room.game.currentPlayerIndex === meIndex) {
+            const handW = 2 * cardW + gap;
+            const handX = panelX + panelW - handW - 30; // Right margin 30
+            const handY = panelY + (panelH - cardH) / 2;
+            
+            // Highlight cards if active
+            if (isCurrent) {
                  ctx.shadowColor = THEME.colors.accent;
-                 ctx.shadowBlur = 15;
+                 ctx.shadowBlur = 10;
             }
 
             this.drawCard(ctx, me.hand[0], handX, handY, cardW, cardH);
             this.drawCard(ctx, me.hand[1], handX + cardW + gap, handY, cardW, cardH);
             
             ctx.shadowBlur = 0;
+            
+            // Card Label (e.g. Hand Strength) could go here if available
+        }
+        
+        // 4. Dealer Button (if applicable)
+        const sbIndex = this.room.smallBlindIndex;
+        if (typeof sbIndex === 'number') {
+            let dIndex = (sbIndex - 1 + this.room.players.length) % this.room.players.length;
+            if (meIndex === dIndex) {
+                const dR = 10;
+                const dX = avX + avR * 0.7; // Overlap bottom right of avatar
+                const dY = avY + avR * 0.7;
+                
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(dX, dY, dR, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#ccc';
+                ctx.stroke();
+                
+                ctx.fillStyle = '#000';
+                ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('D', dX, dY);
+            }
         }
     }
 
@@ -899,11 +944,15 @@ export default class PokerGame {
 
         if (this.room.game && this.room.game.currentPlayerIndex === meIndex && me.status === 'playing') {
              const btnCount = 3;
-             const gap = 15;
+             const gap = 20;
              const totalGap = (btnCount + 1) * gap;
-             const btnW = (w - totalGap) / btnCount;
-             const btnH = 50;
+             const btnW = Math.min((w - totalGap) / btnCount, 160); // Max width 160
+             const btnH = 56;
              const btnY = y + (h - btnH) / 2;
+             
+             // Center the button group
+             const groupW = btnCount * btnW + (btnCount - 1) * gap;
+             const startX = x + (w - groupW) / 2;
              
              const actions = [
                  { label: 'Fold', color: THEME.colors.danger, action: 'fold' },
@@ -912,27 +961,47 @@ export default class PokerGame {
              ];
              
              actions.forEach((act, i) => {
-                 const btnX = x + gap + i * (btnW + gap);
+                 const btnX = startX + i * (btnW + gap);
+                 
+                 // Shadow
+                 ctx.shadowColor = 'rgba(0,0,0,0.3)';
+                 ctx.shadowBlur = 8;
+                 ctx.shadowOffsetY = 4;
                  
                  // Gradient
                  const grad = ctx.createLinearGradient(btnX, btnY, btnX, btnY + btnH);
                  grad.addColorStop(0, act.color);
-                 grad.addColorStop(1, act.color); // Simplified gradient
-                 
-                 // Shadow
-                 ctx.shadowColor = 'rgba(0,0,0,0.4)';
-                 ctx.shadowBlur = 6;
-                 ctx.shadowOffsetY = 4;
-                 
+                 // Darken slightly for bottom
+                 // Simple hack: assume color is hex, but since we use vars, let's just use solid color or overlay
+                 grad.addColorStop(1, act.color); 
+
                  ctx.fillStyle = act.color; 
-                 this.roundRect(ctx, btnX, btnY, btnW, btnH, 12, true);
+                 // Pill Shape: Radius = btnH / 2
+                 this.roundRect(ctx, btnX, btnY, btnW, btnH, btnH / 2, true);
                  
+                 // Inner Shine (Top half)
                  ctx.shadowBlur = 0;
                  ctx.shadowOffsetY = 0;
+                 ctx.fillStyle = 'rgba(255,255,255,0.1)';
+                 ctx.beginPath();
+                 ctx.arc(btnX + btnH/2, btnY + btnH/2, btnH/2, Math.PI, 1.5 * Math.PI);
+                 ctx.lineTo(btnX + btnW - btnH/2, btnY);
+                 ctx.arc(btnX + btnW - btnH/2, btnY + btnH/2, btnH/2, 1.5 * Math.PI, 0);
+                 ctx.lineTo(btnX + btnW, btnY + btnH/2);
+                 ctx.lineTo(btnX, btnY + btnH/2);
+                 ctx.closePath();
+                 // This is complex to clip a perfect top half of a rounded rect. 
+                 // Simpler: Just a smaller rounded rect on top with gradient?
+                 // Or just skip the shine for now, the shadow is enough.
+                 
+                 // Border
+                 ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+                 ctx.lineWidth = 1;
+                 this.roundRect(ctx, btnX, btnY, btnW, btnH, btnH / 2, false, true);
                  
                  // Text
                  ctx.fillStyle = '#fff';
-                 ctx.font = 'bold 18px Arial';
+                 ctx.font = 'bold 20px Arial';
                  ctx.textAlign = 'center';
                  ctx.textBaseline = 'middle';
                  ctx.fillText(act.label, btnX + btnW / 2, btnY + btnH / 2);
@@ -1185,11 +1254,19 @@ export default class PokerGame {
     }
 
     drawCardBack(ctx, x, y, w, h) {
-        ctx.fillStyle = '#B22222';
-        this.roundRect(ctx, x, y, w, h, 3, true, false);
-        ctx.strokeStyle = '#fff';
+        ctx.fillStyle = THEME.colors.cardBack; // Indigo
+        this.roundRect(ctx, x, y, w, h, 4, true, false);
+        
+        // Pattern (Cross hatch or simple border)
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
         ctx.lineWidth = 1;
-        ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+        ctx.strokeRect(x + 3, y + 3, w - 6, h - 6);
+        
+        // Center Design
+        ctx.fillStyle = 'rgba(255,255,255,0.1)';
+        ctx.beginPath();
+        ctx.arc(x + w/2, y + h/2, w/4, 0, Math.PI*2);
+        ctx.fill();
     }
 
     roundRect(ctx, x, y, w, h, r, fill = true, stroke = false) {
