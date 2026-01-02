@@ -97,6 +97,18 @@ export default class PokerGame {
         }
     }
 
+    handleAppHide() {
+        if (this.docId && this.userId) {
+            RoomManager.getInstance().setPlayerAway(this.docId, this.userId, true);
+        }
+    }
+
+    handleAppShow() {
+        if (this.docId && this.userId) {
+            RoomManager.getInstance().setPlayerAway(this.docId, this.userId, false);
+        }
+    }
+
     preloadAvatars(players) {
         players.forEach(p => {
             if (p.avatarUrl && !this.avatarImages[p.avatarUrl]) {

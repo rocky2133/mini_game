@@ -172,6 +172,39 @@ export default class RoomManager {
     }
   }
 
+  async setPlayerAway(docId, userId, isAway) {
+      try {
+          const res = await this.rooms.doc(docId).get();
+          const room = res.data;
+          
+          const players = room.players;
+          const playerIndex = players.findIndex(p => p.id === userId);
+          if (playerIndex === -1) return;
+          
+          players[playerIndex].isAway = isAway;
+          
+          // If setting to Away, and it's their turn, fold immediately
+          const game = room.game;
+          let shouldFold = false;
+          if (isAway && game && game.status !== 'showdown' && game.currentPlayerIndex === playerIndex) {
+               shouldFold = true;
+          }
+          
+          await this.rooms.doc(docId).update({
+              data: { players: players }
+          });
+          
+          if (shouldFold) {
+              await this.takeAction(docId, userId, 'fold');
+          }
+          
+          return { success: true };
+      } catch (e) {
+          console.error('Set away error', e);
+          return { success: false };
+      }
+  }
+
   async takeAction(docId, userId, action, amount = 0) {
     try {
         const res = await this.rooms.doc(docId).get();
@@ -272,23 +305,24 @@ export default class RoomManager {
             game.winners = [winner];
         } else {
             // Find next playing player
+            // Skip non-playing players AND players with 0 chips (All-in)
             let loopCount = 0;
-            while (players[nextIndex].status !== 'playing' && loopCount < players.length) {
+            while ((players[nextIndex].status !== 'playing' || players[nextIndex].chips === 0) && loopCount < players.length) {
                 nextIndex = (nextIndex + 1) % players.length;
                 loopCount++;
             }
             game.currentPlayerIndex = nextIndex;
             
             // Check if round should end
-            // 1. All active players have acted
-            // 2. All active players have matched the current bet (or are all-in, which we simplified)
+            // 1. All active players (with chips) have acted
+            // 2. All active players have matched the current bet (or are all-in)
             const allActed = players
-                .filter(p => p.status === 'playing')
+                .filter(p => p.status === 'playing' && p.chips > 0)
                 .every(p => p.acted);
                 
             const allMatched = players
                 .filter(p => p.status === 'playing')
-                .every(p => (p.bet || 0) === (game.currentBet || 0));
+                .every(p => (p.bet || 0) === (game.currentBet || 0) || p.chips === 0);
                 
             if (allActed && allMatched) { 
                  this.nextStage(docId, game, players);
@@ -310,13 +344,20 @@ export default class RoomManager {
             data: updateData
         });
 
-        // Trigger Bot if next player is bot (Execute AFTER DB update to avoid race condition)
+        // Trigger Bot or Away Player if next player is bot/away (Execute AFTER DB update)
         // We need to re-evaluate who is the current player because nextStage might have changed it
         const finalCurrentPlayer = players[game.currentPlayerIndex];
-        if (finalCurrentPlayer && finalCurrentPlayer.isBot && game.stage !== 'showdown') {
-             setTimeout(() => {
-                 this.botAction(docId, finalCurrentPlayer.id);
-             }, 1000);
+        if (finalCurrentPlayer && game.stage !== 'showdown') {
+             if (finalCurrentPlayer.isBot) {
+                 setTimeout(() => {
+                     this.botAction(docId, finalCurrentPlayer.id);
+                 }, 1000);
+             } else if (finalCurrentPlayer.isAway) {
+                 // Auto-fold for away player
+                 setTimeout(() => {
+                     this.takeAction(docId, finalCurrentPlayer.id, 'fold');
+                 }, 1000);
+             }
         }
         
         return { success: true };
@@ -399,7 +440,8 @@ export default class RoomManager {
       // Reset player index to first active player after dealer (seat 0 for now)
       // Ideally should be small blind position, but let's just find first playing
       let nextIndex = 0;
-      while (nextIndex < players.length && players[nextIndex].status !== 'playing') {
+      // Skip non-playing OR all-in players (0 chips) for acting
+      while (nextIndex < players.length && (players[nextIndex].status !== 'playing' || players[nextIndex].chips === 0)) {
           nextIndex++;
       }
       game.currentPlayerIndex = nextIndex;
@@ -490,7 +532,7 @@ export default class RoomManager {
         const _ = this.db.command;
         
         // Reset players
-        const players = room.players.map(p => {
+        let players = room.players.map(p => {
             p.status = 'ready';
             p.hand = null;
             p.bet = 0;
@@ -500,6 +542,18 @@ export default class RoomManager {
             p.totalContribution = 0;
             return p;
         });
+
+        // Filter out players who are bankrupt (0 chips) OR Away
+        // "游戏结算时，筹码为0的玩家自动离开房间"
+        // "若游戏结算时，玩家状态为离开，默认执行离开房间"
+        const initialCount = players.length;
+        players = players.filter(p => p.chips > 0 && !p.isAway);
+        
+        if (players.length < initialCount) {
+             // Re-index seats if players removed?
+             // Or just let them be removed. The startGame logic checks players.length >= 2.
+             players.forEach((p, i) => p.seatIndex = i);
+        }
 
         await this.rooms.doc(docId).update({
             data: {
@@ -741,34 +795,7 @@ export default class RoomManager {
       }
   }
 
-  async resetGame(docId) {
-      try {
-        const res = await this.rooms.doc(docId).get();
-        const room = res.data;
-        
-        const players = room.players.map(p => {
-            p.status = 'ready';
-            p.hand = null;
-            p.bet = 0;
-            p.lastAction = '';
-            p.acted = false;
-            p.handResult = null;
-            return p;
-        });
-        
-        await this.rooms.doc(docId).update({
-            data: {
-                status: 'waiting',
-                game: {}, // Clear game data
-                players: players
-            }
-        });
-        return { success: true };
-      } catch (e) {
-          console.error('Reset Game error', e);
-          return { success: false, message: 'Reset failed' };
-      }
-  }
+
 
   listenToRoom(docId, callback) {
       if (this.watcher) this.watcher.close();

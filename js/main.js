@@ -88,6 +88,18 @@ export default class Main {
         }
     });
 
+    wx.onShow(() => {
+        if (this.currentScene === 'poker_game') {
+            this.pokerGame.handleAppShow();
+        }
+    });
+
+    wx.onHide(() => {
+        if (this.currentScene === 'poker_game') {
+            this.pokerGame.handleAppHide();
+        }
+    });
+
     this.start();
   }
 
