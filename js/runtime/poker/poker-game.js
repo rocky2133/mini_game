@@ -44,12 +44,22 @@ export default class PokerGame {
         this.selectedSeatIndex = -1; // For host swapping seats
         this.avatarImages = {};
         this.showExitModal = false; // State for exit modal
+        
+        // Scroll State
+        this.resultScrollY = 0;
+        this.maxScrollY = 0;
+        this.lastTouchY = 0;
+        this.isDragging = false;
     }
     
     init(room, userId, docId) {
         this.room = room;
         this.userId = userId;
         this.docId = docId;
+        
+        // Reset Scroll
+        this.resultScrollY = 0;
+        this.maxScrollY = 0;
 
         // Start watching for updates
         if (this.docId) {
@@ -397,18 +407,13 @@ export default class PokerGame {
             'Royal Flush': '皇家同花顺'
         };
 
-        // Layout Constants
-        const WINNER_SECTION_H = SCREEN_HEIGHT * 0.28; // Header + Winner Name + Type + Cards
-        const PLAYER_GRID_H = SCREEN_HEIGHT * 0.35;
-        const CHIP_LIST_H = SCREEN_HEIGHT * 0.25;
-        
+        // Start Scroll View
+        ctx.save();
+        ctx.translate(0, -this.resultScrollY);
+
         let currentY = 0;
 
         // 1. Header & Winner Section
-        // Background for top section (optional, maybe just transparency)
-        // ctx.fillStyle = 'rgba(0,0,0,0.2)';
-        // ctx.fillRect(0, 0, SCREEN_WIDTH, WINNER_SECTION_H);
-
         const winners = this.room.game.winners || [];
         const winner = winners[0]; // Primary winner
 
@@ -436,8 +441,7 @@ export default class PokerGame {
             ctx.fillText(`牌型: ${zhHandName}`, SCREEN_WIDTH / 2, currentY);
         }
 
-        // Winner's Best Hand (Community Cards usually, or the 5 winning cards)
-        // Displaying Community Cards centered as per reference
+        // Winner's Best Hand
         currentY += 40;
         const communityCards = this.room.game.communityCards || [];
         const cardW = 40;
@@ -453,7 +457,6 @@ export default class PokerGame {
         currentY += cardH + 20;
 
         // 2. Player Hand Grid (2 Columns)
-        // Filter active players (playing or folded-winners)
         const activePlayers = this.room.players.filter(p => p.status === 'playing' || (p.status === 'folded' && winners.some(w => w.id === p.id)));
         
         const gridX = 20;
@@ -462,7 +465,7 @@ export default class PokerGame {
         const colGap = 15;
         const rowGap = 15;
         const cellW = (gridW - (colCount - 1) * colGap) / colCount;
-        const cellH = 100;
+        const cellH = 140; // Increased height to prevent overlap
         
         activePlayers.forEach((p, i) => {
             const col = i % colCount;
@@ -471,11 +474,9 @@ export default class PokerGame {
             const x = gridX + col * (cellW + colGap);
             const y = currentY + row * (cellH + rowGap);
             
-            // Check if we exceed space? (Simple implementation: just draw)
-            
             const isWinner = winners.some(w => w.id === p.id);
             const borderColor = isWinner ? '#FFEB3B' : 'rgba(255,255,255,0.1)';
-            const bgColor = isWinner ? '#2E7D32' : '#1B5E20'; // Winner Green vs Dark Green
+            const bgColor = isWinner ? '#2E7D32' : '#1B5E20'; 
             
             // Box
             ctx.fillStyle = bgColor;
@@ -491,38 +492,36 @@ export default class PokerGame {
                 const pcGap = 6;
                 const pcTotalW = 2 * pcW + pcGap;
                 const pcX = x + (cellW - pcTotalW) / 2;
-                const pcY = y + 15;
+                const pcY = y + 15; // Top padding 15
                 
                 this.renderSmallCard(ctx, p.hand[0], pcX, pcY, pcW, pcH);
                 this.renderSmallCard(ctx, p.hand[1], pcX + pcW + pcGap, pcY, pcW, pcH);
             }
             
-            // Name
+            // Name - Below cards
             ctx.fillStyle = '#FFFFFF';
             ctx.font = 'bold 12px Arial';
             ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle'; 
             let name = p.name;
             if (p.id === this.userId) name += ' (我)';
-            ctx.fillText(name, x + cellW / 2, y + 75);
+            ctx.fillText(name, x + cellW / 2, y + 85); // Increased Y offset
             
-            // Hand Type Badge
+            // Hand Type Badge - Bottom
             if (p.handResult) {
-                const badgeH = 18;
+                const badgeH = 20; // Slightly taller
                 const rawName = p.handResult.name;
                 const zhName = HAND_TYPE_MAP[rawName] || rawName;
                 
-                ctx.font = 'bold 10px Arial';
+                ctx.font = 'bold 11px Arial';
                 const tm = ctx.measureText(zhName);
-                const badgeW = tm.width + 12;
+                const badgeW = tm.width + 16;
                 const badgeX = x + (cellW - badgeW) / 2;
-                const badgeY = y + cellH - badgeH/2; // Overlapping bottom edge style? Or inside?
-                // Reference shows badge inside/at bottom
-                
-                // Let's put it at bottom inside
-                const badgeYInside = y + cellH - badgeH - 6;
+                // Place at bottom with padding
+                const badgeYInside = y + cellH - badgeH - 10;
 
-                ctx.fillStyle = isWinner ? '#FFC107' : '#CFD8DC'; // Yellow or Light Grey
-                this.roundRect(ctx, badgeX, badgeYInside, badgeW, badgeH, 4, true);
+                ctx.fillStyle = isWinner ? '#FFC107' : '#CFD8DC'; 
+                this.roundRect(ctx, badgeX, badgeYInside, badgeW, badgeH, 6, true);
                 
                 ctx.fillStyle = '#000';
                 ctx.textBaseline = 'middle';
@@ -552,9 +551,7 @@ export default class PokerGame {
         const rowH = 50;
         
         sortedPlayers.forEach((p, i) => {
-            // Cap at 4-5 items to avoid overlapping footer
-            if (currentY + rowH > SCREEN_HEIGHT - 70) return;
-            
+            // Render all rows, let user scroll
             const rowY = currentY;
             
             // Background Row
@@ -601,13 +598,31 @@ export default class PokerGame {
             currentY += rowH;
         });
 
+        // Update Max Scroll
+        // Allow scrolling so last item clears the fixed footer button (approx 120px)
+        const totalHeight = currentY + 120;
+        this.maxScrollY = Math.max(0, totalHeight - SCREEN_HEIGHT);
+
+        ctx.restore(); // Restore to render fixed elements
+        
+        // 5. Scrollbar (Visual Indicator)
+        if (this.maxScrollY > 0) {
+            const barW = 4;
+            const barH = Math.max(40, (SCREEN_HEIGHT / totalHeight) * SCREEN_HEIGHT);
+            const barX = SCREEN_WIDTH - barW - 2;
+            const barY = (this.resultScrollY / totalHeight) * SCREEN_HEIGHT;
+            
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            this.roundRect(ctx, barX, barY, barW, barH, 2, true);
+        }
+
         // 4. Footer Button (Floating) - Host Only
         const me = this.room.players.find(p => p.id === this.userId);
         if (me && me.isHost) {
             const btnW = 220;
             const btnH = 50;
             const btnX = (SCREEN_WIDTH - btnW) / 2;
-            const btnY = SCREEN_HEIGHT - 80; // Moved up slightly
+            const btnY = SCREEN_HEIGHT - 80; 
             
             // Shadow for button
             ctx.save();
@@ -625,7 +640,7 @@ export default class PokerGame {
             ctx.textBaseline = 'middle';
             ctx.fillText('下一局 (Next Game)', SCREEN_WIDTH / 2, btnY + btnH / 2);
             
-            // Store button hit area
+            // Store button hit area (Fixed Coords)
             this.resultBtn = { x: btnX, y: btnY, w: btnW, h: btnH };
         } else {
             // Non-host: Waiting text
@@ -1046,9 +1061,32 @@ export default class PokerGame {
             
             if (p.lastAction === 'raise' || p.lastAction === 'bet') badgeColor = THEME.colors.warning;
             else if (p.lastAction === 'call' || p.lastAction === 'check' || p.lastAction === 'SB' || p.lastAction === 'BB') badgeColor = THEME.colors.primary;
-        } else if (isCurrent) {
+        } else {
+            // No recent action (e.g. new round), check SB/BB Position
+            // Only if game is running
+            if (this.room.dealerIndex !== undefined) {
+                const playerCount = this.room.players.length;
+                const sbIndex = (this.room.dealerIndex + 1) % playerCount;
+                const bbIndex = (this.room.dealerIndex + 2) % playerCount;
+                
+                if (p.originalIndex === sbIndex) {
+                    badgeText = '小盲';
+                    badgeColor = THEME.colors.primary;
+                } else if (p.originalIndex === bbIndex) {
+                    badgeText = '大盲';
+                    badgeColor = THEME.colors.primary;
+                }
+            }
+        }
+        
+        if (isCurrent && !badgeText) {
+            // Fallback for current player if no SB/BB/Action
             badgeText = '思考中';
-            badgeColor = THEME.colors.accent; // Yellow
+            badgeColor = THEME.colors.accent;
+        } else if (isCurrent) {
+            // If current but has badge (e.g. SB), maybe add indicator? 
+            // Or just rely on the Yellow Border of the block.
+            // The Yellow Border (renderPlayerBlock top) already indicates turn.
         }
         
         if (badgeText) {
@@ -1547,7 +1585,56 @@ export default class PokerGame {
         // Game loop
     }
 
+    handleTouchMove(x, y) {
+        if (this.room && this.room.game && this.room.game.stage === 'showdown') {
+            const dy = y - this.lastTouchY;
+            // Threshold to start dragging
+            if (Math.abs(dy) > 5 || this.isDragging) {
+                this.isDragging = true;
+                this.resultScrollY -= dy;
+                
+                // Clamp
+                if (this.resultScrollY < 0) this.resultScrollY = 0;
+                if (this.resultScrollY > this.maxScrollY) this.resultScrollY = this.maxScrollY;
+                
+                this.render(canvas.getContext('2d'));
+            }
+        }
+        this.lastTouchY = y;
+    }
+
+    async handleTouchEnd(x, y) {
+        if (this.isDragging) {
+            this.isDragging = false;
+            return; // Was a drag, not a click
+        }
+        
+        // Handle Click for Showdown (deferred from Start to support scroll)
+        if (this.room && this.room.game && this.room.game.stage === 'showdown') {
+             // Check Result Page Button (Host Only, Next Game)
+             if (this.resultBtn) {
+                  const btn = this.resultBtn;
+                  if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+                      console.log('[PokerGame] Clicked Next Game');
+                      wx.showLoading({ title: 'Resetting...' });
+                      const result = await RoomManager.getInstance().resetGame(this.docId);
+                      wx.hideLoading();
+                      if (!result.success) {
+                          wx.showToast({ title: result.message, icon: 'none' });
+                      } else {
+                          this.room.status = 'waiting';
+                          delete this.room.game; 
+                          this.render(canvas.getContext('2d'));
+                      }
+                  }
+             }
+        }
+    }
+
     async touchHandler(x, y) {
+        this.lastTouchY = y;
+        this.isDragging = false;
+
         // 1. Exit Modal Handling (Priority)
         if (this.showExitModal && this.modalBtns) {
             // Cancel
@@ -1579,26 +1666,8 @@ export default class PokerGame {
             }
         }
 
-        // 3. Showdown Handling (Priority)
+        // 3. Showdown Handling (Deferred to handleTouchEnd for Scroll)
         if (this.room && this.room.game && this.room.game.stage === 'showdown') {
-            // Check Result Page Button (Host Only, Next Game)
-            if (this.resultBtn) {
-                 const btn = this.resultBtn;
-                 if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
-                     console.log('[PokerGame] Clicked Next Game');
-                     wx.showLoading({ title: 'Resetting...' });
-                     const result = await RoomManager.getInstance().resetGame(this.docId);
-                     wx.hideLoading();
-                     if (!result.success) {
-                         wx.showToast({ title: result.message, icon: 'none' });
-                     } else {
-                         this.room.status = 'waiting';
-                         delete this.room.game; 
-                         this.render(canvas.getContext('2d'));
-                     }
-                     return 'reset_game';
-                 }
-            }
             return null;
         }
 
@@ -1632,15 +1701,7 @@ export default class PokerGame {
         }
         
         // Waiting Room Logic (Start Game, Swap Seats)
-        // Since we changed render logic, we need to adapt this if we want Waiting Room to work.
-        // But user asked for "Game Page" layout.
-        // If status is 'waiting', we use renderWaiting() which still uses Grid.
-        // So we should keep the waiting room touch logic?
-        // Yes, renderWaiting was NOT changed significantly (except it's in a separate method).
-        // Let's copy back the waiting room logic from previous version or rewrite it simply.
-        
         if (this.room && this.room.status === 'waiting') {
-             // ... Re-implementing simplified waiting room touch logic ...
              // Check Start Game Button
              const meIndex = this.room.players.findIndex(p => p.id === this.userId);
              const me = this.room.players[meIndex];

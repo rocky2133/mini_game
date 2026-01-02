@@ -70,6 +70,22 @@ export default class Main {
       }
     });
 
+    wx.onTouchMove((e) => {
+        const x = e.touches[0].clientX;
+        const y = e.touches[0].clientY;
+        if (this.currentScene === 'poker_game') {
+            this.pokerGame.handleTouchMove(x, y);
+        }
+    });
+
+    wx.onTouchEnd((e) => {
+        const x = e.changedTouches[0].clientX;
+        const y = e.changedTouches[0].clientY;
+        if (this.currentScene === 'poker_game') {
+            this.pokerGame.handleTouchEnd(x, y);
+        }
+    });
+
     this.start();
   }
 
