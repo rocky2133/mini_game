@@ -54,12 +54,15 @@ export default class PokerGame {
         this.maxScrollY = 0;
         this.lastTouchY = 0;
         this.isDragging = false;
+
+        this.onExit = null; // Callback for exit
     }
     
-    init(room, userId, docId) {
+    init(room, userId, docId, onExit) {
         this.room = room;
         this.userId = userId;
         this.docId = docId;
+        this.onExit = onExit;
         
         // Reset Scroll
         this.resultScrollY = 0;
@@ -69,6 +72,15 @@ export default class PokerGame {
         if (this.docId) {
             RoomManager.getInstance().listenToRoom(this.docId, (newRoom) => {
                 if (newRoom) {
+                    // Check if I am still in the room
+                    const amIInRoom = newRoom.players && newRoom.players.some(p => p.id === this.userId);
+                    if (!amIInRoom) {
+                        wx.showToast({ title: 'You have left the room', icon: 'none' });
+                        this.quit();
+                        if (this.onExit) this.onExit();
+                        return;
+                    }
+
                     this.room = newRoom;
                     // Ensure avatars are preloaded when room updates (e.g. new players)
                     if (this.room.players) {
@@ -77,6 +89,7 @@ export default class PokerGame {
                 } else {
                     wx.showToast({ title: 'Room closed', icon: 'none' });
                     this.quit();
+                    if (this.onExit) this.onExit();
                 }
             });
         }

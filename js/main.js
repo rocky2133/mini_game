@@ -55,7 +55,9 @@ export default class Main {
                   if (result.action === 'back') {
                       this.currentScene = 'home';
                   } else if (result.action === 'enter_game') {
-                      this.pokerGame.init(result.room, result.userId, result.docId);
+                      this.pokerGame.init(result.room, result.userId, result.docId, () => {
+                          this.currentScene = 'poker_menu';
+                      });
                       this.currentScene = 'poker_game';
                   }
               }
