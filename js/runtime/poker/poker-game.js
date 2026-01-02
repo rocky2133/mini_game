@@ -383,90 +383,95 @@ export default class PokerGame {
     }
 
     renderResultPage(ctx) {
-        // Layout Constants
-        const HEADER_H = SCREEN_HEIGHT * 0.08;
-        const WINNER_H = SCREEN_HEIGHT * 0.15;
-        const COMMUNITY_H = SCREEN_HEIGHT * 0.12;
-        const PLAYERS_H = SCREEN_HEIGHT * 0.25;
-        const CHIPS_H = SCREEN_HEIGHT * 0.25;
-        const FOOTER_H = SCREEN_HEIGHT * 0.15;
+        // Translation Map for Hand Types
+        const HAND_TYPE_MAP = {
+            'High Card': '高牌',
+            'Pair': '对子',
+            'Two Pair': '两对',
+            'Three of a Kind': '三条',
+            'Straight': '顺子',
+            'Flush': '同花',
+            'Full House': '葫芦',
+            'Four of a Kind': '四条',
+            'Straight Flush': '同花顺',
+            'Royal Flush': '皇家同花顺'
+        };
 
+        // Layout Constants
+        const WINNER_SECTION_H = SCREEN_HEIGHT * 0.28; // Header + Winner Name + Type + Cards
+        const PLAYER_GRID_H = SCREEN_HEIGHT * 0.35;
+        const CHIP_LIST_H = SCREEN_HEIGHT * 0.25;
+        
         let currentY = 0;
 
-        // 1. Header (Room Info)
-        ctx.fillStyle = '#A5D6A7';
-        ctx.font = '12px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        const sb = this.room.smallBlind || 10;
-        const bb = this.room.bigBlind || 20;
-        ctx.fillText(`房间号: ${this.room.roomId} | 盲注: ${sb}/${bb}`, SCREEN_WIDTH / 2, currentY + HEADER_H / 2);
-        currentY += HEADER_H;
+        // 1. Header & Winner Section
+        // Background for top section (optional, maybe just transparency)
+        // ctx.fillStyle = 'rgba(0,0,0,0.2)';
+        // ctx.fillRect(0, 0, SCREEN_WIDTH, WINNER_SECTION_H);
 
-        // 2. Winner Info
         const winners = this.room.game.winners || [];
         const winner = winners[0]; // Primary winner
-        
+
+        // "本局赢家" Label
+        currentY += 40;
         ctx.fillStyle = '#FFFFFF';
         ctx.font = 'bold 20px Arial';
-        ctx.fillText('本局赢家', SCREEN_WIDTH / 2, currentY + 20);
-        
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('本局赢家', SCREEN_WIDTH / 2, currentY);
+
+        // Winner Name
+        currentY += 40;
         if (winner) {
             ctx.fillStyle = '#FFEB3B'; // Yellow
-            ctx.font = 'bold 32px Arial';
-            ctx.fillText(winner.name, SCREEN_WIDTH / 2, currentY + 60);
+            ctx.font = 'bold 36px Arial';
+            ctx.fillText(winner.name, SCREEN_WIDTH / 2, currentY);
             
-            ctx.fillStyle = '#FFF176'; // Light Yellow
-            ctx.font = 'bold 16px Arial';
-            const handName = winner.handResult ? winner.handResult.name : '';
-            ctx.fillText(`牌型: ${handName}`, SCREEN_WIDTH / 2, currentY + 90);
+            // Hand Type
+            currentY += 30;
+            ctx.fillStyle = '#FFEB3B'; // Yellow
+            ctx.font = 'bold 18px Arial';
+            const rawHandName = winner.handResult ? winner.handResult.name : '';
+            const zhHandName = HAND_TYPE_MAP[rawHandName] || rawHandName;
+            ctx.fillText(`牌型: ${zhHandName}`, SCREEN_WIDTH / 2, currentY);
         }
-        currentY += WINNER_H;
 
-        // 3. Winner's Best Hand (Community + Hole -> 5 Cards)
-        // Note: handResult.cards usually contains the 5 best cards.
-        // If not available, we might show community cards + hole cards?
-        // Let's use game.communityCards for now as shown in image (5 cards)
-        // Actually image shows 5 cards centered. These are likely the Community Cards or the Winner's Best 5?
-        // Usually it's the Community Cards in the center, and Hole cards in player blocks.
-        // Let's render Community Cards here.
+        // Winner's Best Hand (Community Cards usually, or the 5 winning cards)
+        // Displaying Community Cards centered as per reference
+        currentY += 40;
         const communityCards = this.room.game.communityCards || [];
-        const cardW = 36;
-        const cardH = 50;
-        const gap = 8;
+        const cardW = 40;
+        const cardH = 56;
+        const gap = 10;
         const totalW = communityCards.length * cardW + (communityCards.length - 1) * gap;
         let startX = (SCREEN_WIDTH - totalW) / 2;
         
         communityCards.forEach((c, i) => {
-            this.renderSmallCard(ctx, c, startX + i * (cardW + gap), currentY + 10, cardW, cardH);
+            this.renderSmallCard(ctx, c, startX + i * (cardW + gap), currentY, cardW, cardH);
         });
-        currentY += COMMUNITY_H;
+        
+        currentY += cardH + 20;
 
-        // 4. Player Comparison (Active Players / Showdown Players)
-        // Show 2 main players or scrollable.
-        // Filter players who are playing or folded-winners?
-        // Show all 'playing' status players (who went to showdown)
-        const activePlayers = this.room.players.filter(p => p.status === 'playing' || (p.status === 'folded' && p.id === winner.id));
-        // Note: Folded winner implies everyone else folded.
+        // 2. Player Hand Grid (2 Columns)
+        // Filter active players (playing or folded-winners)
+        const activePlayers = this.room.players.filter(p => p.status === 'playing' || (p.status === 'folded' && winners.some(w => w.id === p.id)));
         
-        // Layout: Flex Row
-        const playerBlockW = 140;
-        const playerBlockH = 100;
-        const playerGap = 15;
-        // Center the blocks
-        const playersTotalW = activePlayers.length * playerBlockW + (activePlayers.length - 1) * playerGap;
-        // If too wide, start from left with scroll (not implemented), so just center/squeeze.
-        // For 2 players (Head-up), it fits. For 6, it won't fit.
-        // Prompt Image shows 2 players.
-        // I'll implement horizontal scroll logic conceptually or just squeeze if many.
-        // Let's just center them for now.
-        
-        let pStartX = (SCREEN_WIDTH - playersTotalW) / 2;
-        if (pStartX < 10) pStartX = 10; // Left margin
+        const gridX = 20;
+        const gridW = SCREEN_WIDTH - 40;
+        const colCount = 2;
+        const colGap = 15;
+        const rowGap = 15;
+        const cellW = (gridW - (colCount - 1) * colGap) / colCount;
+        const cellH = 100;
         
         activePlayers.forEach((p, i) => {
-            const px = pStartX + i * (playerBlockW + playerGap);
-            const py = currentY;
+            const col = i % colCount;
+            const row = Math.floor(i / colCount);
+            
+            const x = gridX + col * (cellW + colGap);
+            const y = currentY + row * (cellH + rowGap);
+            
+            // Check if we exceed space? (Simple implementation: just draw)
             
             const isWinner = winners.some(w => w.id === p.id);
             const borderColor = isWinner ? '#FFEB3B' : 'rgba(255,255,255,0.1)';
@@ -474,19 +479,19 @@ export default class PokerGame {
             
             // Box
             ctx.fillStyle = bgColor;
-            this.roundRect(ctx, px, py, playerBlockW, playerBlockH, 8, true);
+            this.roundRect(ctx, x, y, cellW, cellH, 12, true);
             ctx.strokeStyle = borderColor;
-            ctx.lineWidth = 2;
-            this.roundRect(ctx, px, py, playerBlockW, playerBlockH, 8, false, true);
+            ctx.lineWidth = isWinner ? 2 : 1;
+            this.roundRect(ctx, x, y, cellW, cellH, 12, false, true);
             
-            // Cards (Hole Cards)
+            // Cards (Hole Cards) - Centered in box
             if (p.hand) {
-                const pcW = 32;
-                const pcH = 45;
+                const pcW = 34;
+                const pcH = 48;
                 const pcGap = 6;
                 const pcTotalW = 2 * pcW + pcGap;
-                const pcX = px + (playerBlockW - pcTotalW) / 2;
-                const pcY = py + 15;
+                const pcX = x + (cellW - pcTotalW) / 2;
+                const pcY = y + 15;
                 
                 this.renderSmallCard(ctx, p.hand[0], pcX, pcY, pcW, pcH);
                 this.renderSmallCard(ctx, p.hand[1], pcX + pcW + pcGap, pcY, pcW, pcH);
@@ -498,59 +503,68 @@ export default class PokerGame {
             ctx.textAlign = 'center';
             let name = p.name;
             if (p.id === this.userId) name += ' (我)';
-            ctx.fillText(name, px + playerBlockW / 2, py + 75);
+            ctx.fillText(name, x + cellW / 2, y + 75);
             
             // Hand Type Badge
             if (p.handResult) {
                 const badgeH = 18;
-                const badgeW = 60;
-                const badgeX = px + (playerBlockW - badgeW) / 2;
-                const badgeY = py + playerBlockH - badgeH - 5; // Bottom aligned inside
+                const rawName = p.handResult.name;
+                const zhName = HAND_TYPE_MAP[rawName] || rawName;
                 
-                ctx.fillStyle = isWinner ? '#FFC107' : '#B0BEC5';
-                this.roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 4, true);
+                ctx.font = 'bold 10px Arial';
+                const tm = ctx.measureText(zhName);
+                const badgeW = tm.width + 12;
+                const badgeX = x + (cellW - badgeW) / 2;
+                const badgeY = y + cellH - badgeH/2; // Overlapping bottom edge style? Or inside?
+                // Reference shows badge inside/at bottom
+                
+                // Let's put it at bottom inside
+                const badgeYInside = y + cellH - badgeH - 6;
+
+                ctx.fillStyle = isWinner ? '#FFC107' : '#CFD8DC'; // Yellow or Light Grey
+                this.roundRect(ctx, badgeX, badgeYInside, badgeW, badgeH, 4, true);
                 
                 ctx.fillStyle = '#000';
-                ctx.font = 'bold 10px Arial';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(p.handResult.name, badgeX + badgeW / 2, badgeY + badgeH / 2);
+                ctx.fillText(zhName, badgeX + badgeW / 2, badgeYInside + badgeH / 2);
             }
         });
-        currentY += PLAYERS_H;
+        
+        // Update currentY after grid
+        const rowCount = Math.ceil(activePlayers.length / colCount);
+        currentY += rowCount * (cellH + rowGap) + 20;
 
-        // 5. Chip Changes List
+        // 3. Chip Changes List
         ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = '#CFD8DC';
         ctx.font = 'bold 14px Arial';
-        ctx.fillText('筹码变动', 20, currentY + 15);
-        currentY += 25;
+        ctx.fillText('筹码变动', 20, currentY);
+        currentY += 10;
         
-        const listH = CHIPS_H - 25;
-        // Show top 3-4 players or scroll?
-        // Sort by winner first?
+        // Sort players by chips won (descending)
         const sortedPlayers = [...this.room.players].sort((a, b) => {
-             // Winner first
-             const aWin = winners.some(w => w.id === a.id);
-             const bWin = winners.some(w => w.id === b.id);
-             if (aWin && !bWin) return -1;
-             if (!aWin && bWin) return 1;
-             return 0;
+             const changeA = a.roundChange || 0;
+             const changeB = b.roundChange || 0;
+             return changeB - changeA;
         });
         
-        const rowH = 45;
+        const rowH = 50;
+        
         sortedPlayers.forEach((p, i) => {
-            if (currentY + rowH > SCREEN_HEIGHT - FOOTER_H) return; // Clip
+            // Cap at 4-5 items to avoid overlapping footer
+            if (currentY + rowH > SCREEN_HEIGHT - 70) return;
             
             const rowY = currentY;
             
             // Background Row
             ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-            this.roundRect(ctx, 20, rowY, SCREEN_WIDTH - 40, rowH - 5, 6, true);
+            this.roundRect(ctx, 20, rowY, SCREEN_WIDTH - 40, rowH - 6, 8, true);
             
             // Avatar
-            const avR = 14;
+            const avR = 16;
             const avX = 45;
-            const avY = rowY + (rowH - 5)/2;
+            const avY = rowY + (rowH - 6)/2;
             
             ctx.save();
             ctx.beginPath();
@@ -575,60 +589,89 @@ export default class PokerGame {
             const change = p.roundChange || 0;
             const changeStr = change > 0 ? `+${change}` : `${change}`;
             ctx.fillStyle = change >= 0 ? '#4CAF50' : '#F44336';
-            ctx.font = 'bold 14px Arial';
+            ctx.font = 'bold 16px Arial';
             ctx.textAlign = 'right';
-            ctx.fillText(changeStr, SCREEN_WIDTH - 40, avY - 6);
+            ctx.fillText(changeStr, SCREEN_WIDTH - 40, avY - 8);
             
             // Balance
             ctx.fillStyle = '#90A4AE';
-            ctx.font = '10px Arial';
-            ctx.fillText(`余额: ${p.chips}`, SCREEN_WIDTH - 40, avY + 8);
+            ctx.font = '12px Arial';
+            ctx.fillText(`余额: ${p.chips}`, SCREEN_WIDTH - 40, avY + 10);
             
             currentY += rowH;
         });
 
-        // 6. Footer Button
-        const btnW = 200;
-        const btnH = 44;
-        const btnX = (SCREEN_WIDTH - btnW) / 2;
-        const btnY = SCREEN_HEIGHT - 60;
-        
-        ctx.fillStyle = '#FF9800'; // Orange
-        this.roundRect(ctx, btnX, btnY, btnW, btnH, 22, true);
-        
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 16px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('返回房间', SCREEN_WIDTH / 2, btnY + btnH / 2);
-        
-        // Store button hit area
-        this.resultBtn = { x: btnX, y: btnY, w: btnW, h: btnH };
+        // 4. Footer Button (Floating) - Host Only
+        const me = this.room.players.find(p => p.id === this.userId);
+        if (me && me.isHost) {
+            const btnW = 220;
+            const btnH = 50;
+            const btnX = (SCREEN_WIDTH - btnW) / 2;
+            const btnY = SCREEN_HEIGHT - 80; // Moved up slightly
+            
+            // Shadow for button
+            ctx.save();
+            ctx.shadowColor = 'rgba(0,0,0,0.4)';
+            ctx.shadowBlur = 10;
+            ctx.shadowOffsetY = 4;
+            
+            ctx.fillStyle = '#FF9800'; // Orange
+            this.roundRect(ctx, btnX, btnY, btnW, btnH, 25, true);
+            ctx.restore();
+            
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 18px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('下一局 (Next Game)', SCREEN_WIDTH / 2, btnY + btnH / 2);
+            
+            // Store button hit area
+            this.resultBtn = { x: btnX, y: btnY, w: btnW, h: btnH };
+        } else {
+            // Non-host: Waiting text
+            ctx.fillStyle = '#B0BEC5';
+            ctx.font = 'italic 16px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('等待房主开始下一局...', SCREEN_WIDTH / 2, SCREEN_HEIGHT - 60);
+            this.resultBtn = null;
+        }
     }
 
     renderSmallCard(ctx, card, x, y, w, h) {
-        // Simple card render
+        // Render card background
         ctx.fillStyle = '#FFFFFF';
-        this.roundRect(ctx, x, y, w, h, 4, true);
+        this.roundRect(ctx, x, y, w, h, 6, true);
         
         if (!card) return;
         
-        const suitColors = { 'hearts': '#D32F2F', 'diamonds': '#D32F2F', 'spades': '#212121', 'clubs': '#212121' };
-        const suitSymbols = { 'hearts': '♥', 'diamonds': '♦', 'spades': '♠', 'clubs': '♣' };
-        
-        const color = suitColors[card.suit] || '#000';
-        const symbol = suitSymbols[card.suit] || '?';
+        // Unicode Suit Logic
+        const suit = card.suit;
         const rank = card.rank;
         
+        let color = '#000';
+        if (suit === '♥' || suit === '♦') {
+            color = '#D32F2F'; // Red
+        } else {
+            color = '#212121'; // Black
+        }
+        
         ctx.fillStyle = color;
-        ctx.font = 'bold 14px Arial';
+        ctx.font = 'bold 16px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         
-        // Center content: Rank above Suit
-        ctx.fillText(rank, x + w / 2, y + h / 2 - 6);
-        ctx.font = '16px Arial';
-        ctx.fillText(symbol, x + w / 2, y + h / 2 + 8);
+        // Layout: Rank top, Suit bottom
+        // Center content vertically
+        const centerY = y + h / 2;
+        
+        // Rank
+        ctx.font = 'bold 16px Arial';
+        ctx.fillText(rank, x + w / 2, centerY - 8);
+        
+        // Suit
+        ctx.font = '20px Arial';
+        ctx.fillText(suit, x + w / 2, centerY + 10);
     }
 
     renderTopBanner(ctx, rect) {
@@ -1437,76 +1480,8 @@ export default class PokerGame {
         }
     }
 
-    renderShowdownOverlay(ctx) {
-        // Winners Info
-        // Move Winners Info to Top Half to avoid blocking Me Cards and Community Cards
-        let resultY = SCREEN_HEIGHT / 2 - 160;
-
-        // Semi-transparent background for result
-        ctx.fillStyle = 'rgba(0,0,0,0.85)';
-        // Make background cover a band in the upper middle
-        ctx.fillRect(0, resultY - 60, SCREEN_WIDTH, 220); // Increased height for AI comment
-
-        // Draw AI Comment
-        if (this.room.game.aiComment) {
-            ctx.fillStyle = '#00FFFF'; // Cyan for AI
-            ctx.font = 'italic 16px Arial';
-            ctx.textAlign = 'center';
-            // Word wrap simple implementation
-            const words = this.room.game.aiComment.split(' ');
-            let line = '';
-            let commentY = resultY - 40;
-
-            // Simple "AI says:" header
-            ctx.fillText("🤖 AI Commentary:", SCREEN_WIDTH / 2, commentY - 20);
-
-            // Draw text (simplified wrapping)
-            ctx.fillStyle = '#FFFFFF';
-            ctx.fillText(this.room.game.aiComment, SCREEN_WIDTH / 2, commentY);
-        }
-
-        if (this.room.game.winners) {
-            this.room.game.winners.forEach(w => {
-                // Draw Trophy Icon
-                const textX = SCREEN_WIDTH / 2;
-
-                ctx.fillStyle = '#FFD700'; // Gold
-                ctx.font = '30px Arial'; // Emoji size
-                ctx.textAlign = 'center';
-                ctx.fillText('🏆', textX, resultY - 30);
-
-                ctx.fillStyle = '#00FF00';
-                ctx.font = 'bold 22px Arial';
-                ctx.textAlign = 'center';
-                let winText = `${w.name} Wins! (+${this.room.game.pot})`;
-                ctx.fillText(winText, textX, resultY);
-
-                if (w.handResult) {
-                    ctx.fillStyle = '#AAAAAA';
-                    ctx.font = '18px Arial';
-                    ctx.fillText(w.handResult.name, textX, resultY + 25);
-                }
-                resultY += 60;
-            });
-        }
-
-        // Next Game Button (Host Only)
-        const me = this.room.players.find(p => p.id === this.userId);
-        if (me && me.isHost) {
-            ctx.fillStyle = '#00FF00';
-            this.roundRect(ctx, SCREEN_WIDTH / 2 - 60, SCREEN_HEIGHT - 120, 120, 40, 10);
-            ctx.fillStyle = '#000';
-            ctx.font = 'bold 20px Arial';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText('Next Hand', SCREEN_WIDTH / 2, SCREEN_HEIGHT - 100);
-            ctx.textBaseline = 'alphabetic';
-        } else {
-            ctx.fillStyle = '#fff';
-            ctx.font = '16px Arial';
-            ctx.fillText('Waiting for host...', SCREEN_WIDTH / 2, SCREEN_HEIGHT - 100);
-        }
-    }
+    // Old Showdown Overlay - Removed in favor of renderResultPage
+    // renderShowdownOverlay(ctx) { ... }
 
     drawCard(ctx, card, x, y, w, h) {
         // Card Background
@@ -1606,30 +1581,23 @@ export default class PokerGame {
 
         // 3. Showdown Handling (Priority)
         if (this.room && this.room.game && this.room.game.stage === 'showdown') {
-            // Next Hand Button (Host Only)
-            const me = this.room.players.find(p => p.id === this.userId);
-            if (me && me.isHost) {
-                // Button is rendered in renderShowdownOverlay at center bottom
-                // x: SCREEN_WIDTH / 2 - 60, y: SCREEN_HEIGHT - 120, w: 120, h: 40
-                const btnX = SCREEN_WIDTH / 2 - 60;
-                const btnY = SCREEN_HEIGHT - 120;
-                const btnW = 120;
-                const btnH = 40;
-                
-                if (x >= btnX && x <= btnX + btnW && y >= btnY && y <= btnY + btnH) {
-                    console.log('[PokerGame] Clicked Return Room');
-                    wx.showLoading({ title: 'Resetting...' });
-                    const result = await RoomManager.getInstance().resetGame(this.docId);
-                    wx.hideLoading();
-                    if (!result.success) {
-                        wx.showToast({ title: result.message, icon: 'none' });
-                    } else {
-                        this.room.status = 'waiting';
-                        delete this.room.game; 
-                        this.render(canvas.getContext('2d'));
-                    }
-                    return 'reset_game';
-                }
+            // Check Result Page Button (Host Only, Next Game)
+            if (this.resultBtn) {
+                 const btn = this.resultBtn;
+                 if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+                     console.log('[PokerGame] Clicked Next Game');
+                     wx.showLoading({ title: 'Resetting...' });
+                     const result = await RoomManager.getInstance().resetGame(this.docId);
+                     wx.hideLoading();
+                     if (!result.success) {
+                         wx.showToast({ title: result.message, icon: 'none' });
+                     } else {
+                         this.room.status = 'waiting';
+                         delete this.room.game; 
+                         this.render(canvas.getContext('2d'));
+                     }
+                     return 'reset_game';
+                 }
             }
             return null;
         }
