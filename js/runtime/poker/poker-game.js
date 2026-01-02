@@ -56,11 +56,20 @@ export default class PokerGame {
             RoomManager.getInstance().listenToRoom(this.docId, (newRoom) => {
                 if (newRoom) {
                     this.room = newRoom;
+                    // Ensure avatars are preloaded when room updates (e.g. new players)
+                    if (this.room.players) {
+                        this.preloadAvatars(this.room.players);
+                    }
                 } else {
                     wx.showToast({ title: 'Room closed', icon: 'none' });
                     this.quit();
                 }
             });
+        }
+        
+        // Initial preload
+        if (this.room && this.room.players) {
+            this.preloadAvatars(this.room.players);
         }
     }
 
@@ -388,8 +397,9 @@ export default class PokerGame {
             const startY = y + 15;
             const lineHeight = 20;
             
-            const sbVal = this.room.smallBlind || 100;
-            const bbVal = this.room.bigBlind || 200;
+            // Fix: Match actual values from RoomManager (10/20) if not set in room
+            const sbVal = this.room.smallBlind || 10;
+            const bbVal = this.room.bigBlind || 20;
             
             ctx.font = 'bold 14px Arial';
             ctx.fillStyle = THEME.colors.text;
@@ -477,7 +487,8 @@ export default class PokerGame {
 
         // Render Far Players (Top Area)
         // User says: "Distance between player sub-blocks as large as possible, evenly distributed."
-        const blockW = SCREEN_WIDTH * 0.20;
+        // Update: Width increased to 25%
+        const blockW = SCREEN_WIDTH * 0.25;
         const blockH = SCREEN_HEIGHT * 0.10;
         const y = rect.y + (rect.h - blockH) / 2; // Vertically center
         
@@ -518,7 +529,7 @@ export default class PokerGame {
         // 0 is Left (Near Left)
         // last is Right (Near Right)
         
-        const blockW = SCREEN_WIDTH * 0.20;
+        const blockW = SCREEN_WIDTH * 0.25;
         const blockH = SCREEN_HEIGHT * 0.10;
         
         // Left Side: 0
@@ -556,7 +567,7 @@ export default class PokerGame {
         // Design Specs (Refined):
         // - Rounded Rect Card Background
         // - Active Border (Yellow)
-        // - Status Badges (Top Right, overlapping)
+        // - Status Badges (Top Right, inside block)
         // - Chips Pill (Orange)
         
         const cx = x + w / 2;
@@ -591,31 +602,27 @@ export default class PokerGame {
         ctx.restore();
 
         // Internal Layout Calculation to avoid overlap
-        // h is small (10% height, approx 60-80px on phones)
-        // Top Padding: 8px
-        // Avatar: Radius approx 20-24px (Dia 40-48px)
-        // Name: Font 12px, Height ~14px
-        // Chip Pill: Height 16px
-        // Bottom Padding: 4px
+        // Maximize elements
+        // h is small (10% height)
+        // With 25% width, we have horizontal space, but height is constraint.
         
-        // Let's constrain Avatar size based on available height
-        // Available H = h - 8 (top) - 14 (name) - 16 (chip) - 4 (bottom) - 4 (gap) = h - 46
-        // Max Avatar Dia = h - 46. If h=80, Dia=34. R=17.
-        
-        const pillH = 16;
-        const nameH = 14;
-        const paddingY = 6;
-        const gap = 2;
+        const pillH = 18; // Increased from 16
+        const nameH = 16; // Increased from 14
+        const paddingY = 4; // Decreased padding
+        const gap = 1;
         
         // Bottom Up Layout
         const pillY = y + h - pillH - paddingY;
-        const nameY = pillY - nameH - gap; // Bottom of name is top of pill - gap
+        const nameY = pillY - nameH - gap; 
         
         // Remaining space for avatar
         const avBottom = nameY - gap;
         const avTop = y + paddingY;
         const maxAvH = avBottom - avTop;
-        const avR = Math.min(maxAvH / 2, h * 0.22); // Cap at 22% height
+        
+        // Maximize Avatar Radius, but keep it within vertical bounds
+        // And check horizontal bounds if needed (rarely an issue with 25% width)
+        const avR = Math.min(maxAvH / 2, h * 0.25); // Cap at 25% height (was 22%)
         const avY = avTop + maxAvH / 2; // Center in available space
         
         // 3. Avatar (Top Center)
@@ -655,22 +662,22 @@ export default class PokerGame {
 
         // 4. Name (Below Avatar)
         ctx.fillStyle = '#37474F'; // Dark Text
-        ctx.font = 'bold 12px Arial';
+        ctx.font = 'bold 13px Arial'; // Increased from 12
         ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle'; // Center vertically in its slot
-        const safeName = p.name.length > 8 ? p.name.substring(0, 6) + '..' : p.name;
-        // nameY is top of name area, height is nameH
+        ctx.textBaseline = 'middle'; 
+        // Allow slightly longer names with 25% width
+        const safeName = p.name.length > 10 ? p.name.substring(0, 8) + '..' : p.name;
         ctx.fillText(safeName, cx, nameY + nameH/2);
 
         // 5. Chips Pill (Orange)
         const chipVal = `${p.chips >= 1000 ? (p.chips/1000).toFixed(1) + 'k' : p.chips}`;
-        ctx.font = 'bold 11px Arial';
+        ctx.font = 'bold 12px Arial'; // Increased from 11
         const tm = ctx.measureText(chipVal);
-        const pillW = tm.width + 16;
+        const pillW = tm.width + 18;
         const pillX = cx - pillW / 2;
         
         ctx.fillStyle = THEME.colors.chipBg; // Orange
-        this.roundRect(ctx, pillX, pillY, pillW, pillH, 8, true);
+        this.roundRect(ctx, pillX, pillY, pillW, pillH, 9, true);
         
         ctx.fillStyle = '#3E2723'; // Dark Brown Text
         ctx.textAlign = 'center';
@@ -682,9 +689,12 @@ export default class PokerGame {
         if (typeof sbIndex === 'number') {
             let dIndex = (sbIndex - 1 + this.room.players.length) % this.room.players.length;
             if (originalIndex === dIndex) {
-                const dR = 7;
-                const dX = x; // On the corner
-                const dY = y; 
+                const dR = 8; // Slightly larger
+                const dX = x + 4; // Inside
+                const dY = y + 4; 
+                
+                // Draw partially overlapping top-left
+                // Or inside? Let's put it on the corner
                 
                 ctx.fillStyle = '#fff';
                 ctx.beginPath();
@@ -696,7 +706,7 @@ export default class PokerGame {
                 ctx.stroke();
                 
                 ctx.fillStyle = '#000';
-                ctx.font = 'bold 9px Arial';
+                ctx.font = 'bold 10px Arial';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillText('D', dX, dY);
@@ -705,44 +715,56 @@ export default class PokerGame {
         
         // 7. Small Cards (if Showdown)
         if (p.status === 'playing' && !isFolded && this.room.game && this.room.game.stage === 'showdown' && p.hand) {
-             const cW = 18;
-             const cH = 26;
-             // Put them at bottom right, overlapping slightly if needed but try to stay inside or just on edge
-             const cY = y + h - cH - 2;
-             const cX = x + w - cW * 2 - 2;
+             const cW = 20; // Larger
+             const cH = 28;
+             const cY = y + h - cH - 4;
+             const cX = x + w - cW * 2 - 4;
              
              this.drawCard(ctx, p.hand[0], cX, cY, cW, cH);
              this.drawCard(ctx, p.hand[1], cX + cW + 2, cY, cW, cH);
         }
         
-        // 8. Status Badge (Top Right Corner - Overlapping) - Draw LAST to be on top
+        // 8. Status Badge (Top Right Corner - Inside Block) - Draw LAST
         // Priority: All-in > Folded > Action > Acting
         let badgeText = '';
         let badgeColor = THEME.colors.secondary; // Default Grey
         
+        const isAllIn = (p.status === 'playing' && p.chips === 0);
+        
         if (p.status === 'folded') {
-            badgeText = 'Folded';
+            badgeText = '弃牌';
             badgeColor = THEME.colors.secondary;
-        } else if (p.allIn) {
-            badgeText = 'All-in';
+        } else if (isAllIn) {
+            badgeText = '全下';
             badgeColor = THEME.colors.danger;
         } else if (p.lastAction) {
-            badgeText = p.lastAction.charAt(0).toUpperCase() + p.lastAction.slice(1);
+            // Map actions to Chinese
+            const actionMap = {
+                'check': '过牌',
+                'call': '跟注',
+                'raise': '加注',
+                'bet': '下注',
+                'fold': '弃牌',
+                'SB': '小盲',
+                'BB': '大盲'
+            };
+            badgeText = actionMap[p.lastAction] || p.lastAction;
+            
             if (p.lastAction === 'raise' || p.lastAction === 'bet') badgeColor = THEME.colors.warning;
-            else if (p.lastAction === 'call' || p.lastAction === 'check') badgeColor = THEME.colors.primary;
+            else if (p.lastAction === 'call' || p.lastAction === 'check' || p.lastAction === 'SB' || p.lastAction === 'BB') badgeColor = THEME.colors.primary;
         } else if (isCurrent) {
-            badgeText = 'Acting';
+            badgeText = '思考中';
             badgeColor = THEME.colors.accent; // Yellow
         }
         
         if (badgeText) {
-             ctx.font = 'bold 10px Arial';
+             ctx.font = 'bold 11px Arial';
              const bTm = ctx.measureText(badgeText);
-             const badgeW = bTm.width + 12;
+             const badgeW = bTm.width + 10;
              const badgeH = 18;
-             // Overlap top right corner
-             const badgeX = x + w - badgeW + 6; 
-             const badgeY = y - 6;
+             // Align top right, inside padding
+             const badgeX = x + w - badgeW - 2; 
+             const badgeY = y + 2;
              
              ctx.shadowColor = 'rgba(0,0,0,0.2)';
              ctx.shadowBlur = 4;
