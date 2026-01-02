@@ -128,8 +128,10 @@ export default class PokerGame {
              ctx.fillText('Loading...', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
         } else {
             // Game Render
-            if (this.room.status === 'playing' || (this.room.game && this.room.game.stage === 'showdown')) {
+            if (this.room.status === 'playing') {
                 this.renderGame(ctx);
+            } else if (this.room.game && this.room.game.stage === 'showdown') {
+                this.renderResultPage(ctx);
             } else {
                 this.renderWaiting(ctx);
             }
@@ -380,6 +382,255 @@ export default class PokerGame {
         }
     }
 
+    renderResultPage(ctx) {
+        // Layout Constants
+        const HEADER_H = SCREEN_HEIGHT * 0.08;
+        const WINNER_H = SCREEN_HEIGHT * 0.15;
+        const COMMUNITY_H = SCREEN_HEIGHT * 0.12;
+        const PLAYERS_H = SCREEN_HEIGHT * 0.25;
+        const CHIPS_H = SCREEN_HEIGHT * 0.25;
+        const FOOTER_H = SCREEN_HEIGHT * 0.15;
+
+        let currentY = 0;
+
+        // 1. Header (Room Info)
+        ctx.fillStyle = '#A5D6A7';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const sb = this.room.smallBlind || 10;
+        const bb = this.room.bigBlind || 20;
+        ctx.fillText(`房间号: ${this.room.roomId} | 盲注: ${sb}/${bb}`, SCREEN_WIDTH / 2, currentY + HEADER_H / 2);
+        currentY += HEADER_H;
+
+        // 2. Winner Info
+        const winners = this.room.game.winners || [];
+        const winner = winners[0]; // Primary winner
+        
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 20px Arial';
+        ctx.fillText('本局赢家', SCREEN_WIDTH / 2, currentY + 20);
+        
+        if (winner) {
+            ctx.fillStyle = '#FFEB3B'; // Yellow
+            ctx.font = 'bold 32px Arial';
+            ctx.fillText(winner.name, SCREEN_WIDTH / 2, currentY + 60);
+            
+            ctx.fillStyle = '#FFF176'; // Light Yellow
+            ctx.font = 'bold 16px Arial';
+            const handName = winner.handResult ? winner.handResult.name : '';
+            ctx.fillText(`牌型: ${handName}`, SCREEN_WIDTH / 2, currentY + 90);
+        }
+        currentY += WINNER_H;
+
+        // 3. Winner's Best Hand (Community + Hole -> 5 Cards)
+        // Note: handResult.cards usually contains the 5 best cards.
+        // If not available, we might show community cards + hole cards?
+        // Let's use game.communityCards for now as shown in image (5 cards)
+        // Actually image shows 5 cards centered. These are likely the Community Cards or the Winner's Best 5?
+        // Usually it's the Community Cards in the center, and Hole cards in player blocks.
+        // Let's render Community Cards here.
+        const communityCards = this.room.game.communityCards || [];
+        const cardW = 36;
+        const cardH = 50;
+        const gap = 8;
+        const totalW = communityCards.length * cardW + (communityCards.length - 1) * gap;
+        let startX = (SCREEN_WIDTH - totalW) / 2;
+        
+        communityCards.forEach((c, i) => {
+            this.renderSmallCard(ctx, c, startX + i * (cardW + gap), currentY + 10, cardW, cardH);
+        });
+        currentY += COMMUNITY_H;
+
+        // 4. Player Comparison (Active Players / Showdown Players)
+        // Show 2 main players or scrollable.
+        // Filter players who are playing or folded-winners?
+        // Show all 'playing' status players (who went to showdown)
+        const activePlayers = this.room.players.filter(p => p.status === 'playing' || (p.status === 'folded' && p.id === winner.id));
+        // Note: Folded winner implies everyone else folded.
+        
+        // Layout: Flex Row
+        const playerBlockW = 140;
+        const playerBlockH = 100;
+        const playerGap = 15;
+        // Center the blocks
+        const playersTotalW = activePlayers.length * playerBlockW + (activePlayers.length - 1) * playerGap;
+        // If too wide, start from left with scroll (not implemented), so just center/squeeze.
+        // For 2 players (Head-up), it fits. For 6, it won't fit.
+        // Prompt Image shows 2 players.
+        // I'll implement horizontal scroll logic conceptually or just squeeze if many.
+        // Let's just center them for now.
+        
+        let pStartX = (SCREEN_WIDTH - playersTotalW) / 2;
+        if (pStartX < 10) pStartX = 10; // Left margin
+        
+        activePlayers.forEach((p, i) => {
+            const px = pStartX + i * (playerBlockW + playerGap);
+            const py = currentY;
+            
+            const isWinner = winners.some(w => w.id === p.id);
+            const borderColor = isWinner ? '#FFEB3B' : 'rgba(255,255,255,0.1)';
+            const bgColor = isWinner ? '#2E7D32' : '#1B5E20'; // Winner Green vs Dark Green
+            
+            // Box
+            ctx.fillStyle = bgColor;
+            this.roundRect(ctx, px, py, playerBlockW, playerBlockH, 8, true);
+            ctx.strokeStyle = borderColor;
+            ctx.lineWidth = 2;
+            this.roundRect(ctx, px, py, playerBlockW, playerBlockH, 8, false, true);
+            
+            // Cards (Hole Cards)
+            if (p.hand) {
+                const pcW = 32;
+                const pcH = 45;
+                const pcGap = 6;
+                const pcTotalW = 2 * pcW + pcGap;
+                const pcX = px + (playerBlockW - pcTotalW) / 2;
+                const pcY = py + 15;
+                
+                this.renderSmallCard(ctx, p.hand[0], pcX, pcY, pcW, pcH);
+                this.renderSmallCard(ctx, p.hand[1], pcX + pcW + pcGap, pcY, pcW, pcH);
+            }
+            
+            // Name
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 12px Arial';
+            ctx.textAlign = 'center';
+            let name = p.name;
+            if (p.id === this.userId) name += ' (我)';
+            ctx.fillText(name, px + playerBlockW / 2, py + 75);
+            
+            // Hand Type Badge
+            if (p.handResult) {
+                const badgeH = 18;
+                const badgeW = 60;
+                const badgeX = px + (playerBlockW - badgeW) / 2;
+                const badgeY = py + playerBlockH - badgeH - 5; // Bottom aligned inside
+                
+                ctx.fillStyle = isWinner ? '#FFC107' : '#B0BEC5';
+                this.roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 4, true);
+                
+                ctx.fillStyle = '#000';
+                ctx.font = 'bold 10px Arial';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(p.handResult.name, badgeX + badgeW / 2, badgeY + badgeH / 2);
+            }
+        });
+        currentY += PLAYERS_H;
+
+        // 5. Chip Changes List
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#CFD8DC';
+        ctx.font = 'bold 14px Arial';
+        ctx.fillText('筹码变动', 20, currentY + 15);
+        currentY += 25;
+        
+        const listH = CHIPS_H - 25;
+        // Show top 3-4 players or scroll?
+        // Sort by winner first?
+        const sortedPlayers = [...this.room.players].sort((a, b) => {
+             // Winner first
+             const aWin = winners.some(w => w.id === a.id);
+             const bWin = winners.some(w => w.id === b.id);
+             if (aWin && !bWin) return -1;
+             if (!aWin && bWin) return 1;
+             return 0;
+        });
+        
+        const rowH = 45;
+        sortedPlayers.forEach((p, i) => {
+            if (currentY + rowH > SCREEN_HEIGHT - FOOTER_H) return; // Clip
+            
+            const rowY = currentY;
+            
+            // Background Row
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            this.roundRect(ctx, 20, rowY, SCREEN_WIDTH - 40, rowH - 5, 6, true);
+            
+            // Avatar
+            const avR = 14;
+            const avX = 45;
+            const avY = rowY + (rowH - 5)/2;
+            
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(avX, avY, avR, 0, Math.PI*2);
+            ctx.clip();
+            if (p.avatarUrl && this.avatarImages[p.avatarUrl]?.loaded) {
+                ctx.drawImage(this.avatarImages[p.avatarUrl].img, avX - avR, avY - avR, avR * 2, avR * 2);
+            } else {
+                ctx.fillStyle = '#B0BEC5';
+                ctx.fillRect(avX - avR, avY - avR, avR * 2, avR * 2);
+            }
+            ctx.restore();
+            
+            // Name
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = '14px Arial';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(p.name, avX + 25, avY);
+            
+            // Amount
+            const change = p.roundChange || 0;
+            const changeStr = change > 0 ? `+${change}` : `${change}`;
+            ctx.fillStyle = change >= 0 ? '#4CAF50' : '#F44336';
+            ctx.font = 'bold 14px Arial';
+            ctx.textAlign = 'right';
+            ctx.fillText(changeStr, SCREEN_WIDTH - 40, avY - 6);
+            
+            // Balance
+            ctx.fillStyle = '#90A4AE';
+            ctx.font = '10px Arial';
+            ctx.fillText(`余额: ${p.chips}`, SCREEN_WIDTH - 40, avY + 8);
+            
+            currentY += rowH;
+        });
+
+        // 6. Footer Button
+        const btnW = 200;
+        const btnH = 44;
+        const btnX = (SCREEN_WIDTH - btnW) / 2;
+        const btnY = SCREEN_HEIGHT - 60;
+        
+        ctx.fillStyle = '#FF9800'; // Orange
+        this.roundRect(ctx, btnX, btnY, btnW, btnH, 22, true);
+        
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('返回房间', SCREEN_WIDTH / 2, btnY + btnH / 2);
+        
+        // Store button hit area
+        this.resultBtn = { x: btnX, y: btnY, w: btnW, h: btnH };
+    }
+
+    renderSmallCard(ctx, card, x, y, w, h) {
+        // Simple card render
+        ctx.fillStyle = '#FFFFFF';
+        this.roundRect(ctx, x, y, w, h, 4, true);
+        
+        if (!card) return;
+        
+        const suitColors = { 'hearts': '#D32F2F', 'diamonds': '#D32F2F', 'spades': '#212121', 'clubs': '#212121' };
+        const suitSymbols = { 'hearts': '♥', 'diamonds': '♦', 'spades': '♠', 'clubs': '♣' };
+        
+        const color = suitColors[card.suit] || '#000';
+        const symbol = suitSymbols[card.suit] || '?';
+        const rank = card.rank;
+        
+        ctx.fillStyle = color;
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        // Center content: Rank above Suit
+        ctx.fillText(rank, x + w / 2, y + h / 2 - 6);
+        ctx.font = '16px Arial';
+        ctx.fillText(symbol, x + w / 2, y + h / 2 + 8);
+    }
+
     renderTopBanner(ctx, rect) {
         const { x, y, w, h } = rect;
         
@@ -606,10 +857,10 @@ export default class PokerGame {
         // h is small (10% height)
         // With 25% width, we have horizontal space, but height is constraint.
         
-        const pillH = 18; // Increased from 16
-        const nameH = 16; // Increased from 14
-        const paddingY = 4; // Decreased padding
-        const gap = 1;
+        const pillH = 22; // Increased from 18
+        const nameH = 18; // Increased from 16
+        const paddingY = 2; // Decreased padding
+        const gap = 0;
         
         // Bottom Up Layout
         const pillY = y + h - pillH - paddingY;
@@ -622,7 +873,7 @@ export default class PokerGame {
         
         // Maximize Avatar Radius, but keep it within vertical bounds
         // And check horizontal bounds if needed (rarely an issue with 25% width)
-        const avR = Math.min(maxAvH / 2, h * 0.25); // Cap at 25% height (was 22%)
+        const avR = Math.min(maxAvH / 2, h * 0.35); // Cap at 35% height (was 25%)
         const avY = avTop + maxAvH / 2; // Center in available space
         
         // 3. Avatar (Top Center)
@@ -662,7 +913,7 @@ export default class PokerGame {
 
         // 4. Name (Below Avatar)
         ctx.fillStyle = '#37474F'; // Dark Text
-        ctx.font = 'bold 13px Arial'; // Increased from 12
+        ctx.font = 'bold 14px Arial'; // Increased from 13
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle'; 
         // Allow slightly longer names with 25% width
@@ -671,7 +922,7 @@ export default class PokerGame {
 
         // 5. Chips Pill (Orange)
         const chipVal = `${p.chips >= 1000 ? (p.chips/1000).toFixed(1) + 'k' : p.chips}`;
-        ctx.font = 'bold 12px Arial'; // Increased from 11
+        ctx.font = 'bold 13px Arial'; // Increased from 12
         const tm = ctx.measureText(chipVal);
         const pillW = tm.width + 18;
         const pillX = cx - pillW / 2;

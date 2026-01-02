@@ -188,6 +188,7 @@ export default class RoomManager {
         
         // Process Action
         currentPlayer.acted = true; // Mark that this player has acted in this round
+        currentPlayer.lastAction = action; // Store the specific action for UI display
 
         // Initialize totalContribution if missing (legacy safety)
         if (typeof currentPlayer.totalContribution === 'undefined') {
@@ -256,6 +257,15 @@ export default class RoomManager {
             const winner = activePlayers[0];
             winner.chips += game.pot;
             
+            // Calculate Round Changes
+            players.forEach(p => {
+                if (p.id === winner.id) {
+                    p.roundChange = game.pot - (p.totalContribution || 0);
+                } else {
+                    p.roundChange = -(p.totalContribution || 0);
+                }
+            });
+
             game.stage = 'showdown';
             game.winner = winner;
             game.winReason = 'Others Folded';
@@ -349,14 +359,25 @@ export default class RoomManager {
           // Split pot
           if (winners.length > 0) {
               const splitAmount = Math.floor(game.pot / winners.length);
+              
+              // First, assign chips
               winners.forEach(w => {
                   w.chips += splitAmount;
+                  w.receivedAmount = splitAmount; // Temp tracking
               });
               // Handle remainder (give to first winner)
               const remainder = game.pot - (splitAmount * winners.length);
               if (remainder > 0) {
                   winners[0].chips += remainder;
+                  winners[0].receivedAmount += remainder;
               }
+              
+              // Calculate Round Changes for ALL players
+              players.forEach(p => {
+                  const received = p.receivedAmount || 0;
+                  p.roundChange = received - (p.totalContribution || 0);
+                  delete p.receivedAmount; // Cleanup temp
+              });
           }
           
           game.winners = winners;
