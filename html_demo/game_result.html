@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>对局结算</title>
+    <style>
+        :root {
+            --bg-color: #0F5132; /* Deep Green - Poker Table */
+            --text-color: #FFFFFF;
+            --text-sub-color: #F5F5F5;
+            --winner-gold: #FFD700;
+            --winner-bg-gradient-start: #FFD700;
+            --winner-bg-gradient-end: #F0C808;
+            --loser-bg: #E9ECEF;
+            --profit-green: #28A745;
+            --loss-red: #DC3545;
+            --neutral-grey: #6C757D;
+            --btn-orange: #FF7D00;
+            --btn-grey: #6C757D;
+            --overlay-color: rgba(0, 0, 0, 0.5);
+            --card-back-bg: #356CB5;
+            --card-front-bg: #FFFFFF;
+            --card-border: #FFD700;
+            --card-red: #FF0000;
+            --card-black: #000000;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #000;
+            color: var(--text-color);
+            min-height: 100vh;
+            width: 100vw;
+            /* Global scroll enabled */
+            overflow-y: auto;
+            display: flex;
+            justify-content: center;
+        }
+
+        .result-container {
+            width: 100%;
+            max-width: 430px;
+            min-width: 375px;
+            min-height: 100vh;
+            background-color: var(--bg-color);
+            background-image: radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px);
+            background-size: 20px 20px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            padding-bottom: 100px; /* Increased space for fixed bottom actions */
+        }
+
+        /* 1. Top Info Area */
+        .top-info {
+            /* Removed fixed height */
+            padding: 44px 20px 10px 20px;
+            display: flex;
+            justify-content: center; /* Center since close btn is gone */
+            align-items: center;
+            z-index: 100;
+        }
+
+        .game-meta {
+            font-size: 14px;
+            color: var(--text-sub-color);
+            opacity: 0.8;
+            font-weight: 500;
+        }
+
+        /* 2. Core Result Area */
+        .core-result {
+            padding: 20px 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            position: relative;
+        }
+
+        .result-title {
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--text-color);
+            margin-bottom: 8px;
+        }
+
+        .winner-name {
+            font-size: 32px;
+            font-weight: bold;
+            color: var(--winner-gold);
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+            margin-bottom: 4px;
+            animation: breathe 2s infinite ease-in-out;
+        }
+
+        .winner-hand-type {
+            font-size: 20px;
+            font-weight: bold;
+            color: var(--winner-gold);
+            text-shadow: 0 0 5px rgba(255, 215, 0, 0.3);
+            animation: breathe 2s infinite ease-in-out;
+        }
+
+        @keyframes breathe {
+            0%, 100% { filter: brightness(1); }
+            50% { filter: brightness(1.2); }
+        }
+
+        /* 3. Hand Replay Area */
+        .hand-replay {
+            /* Removed fixed height and overflow */
+            padding: 10px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .community-cards-section {
+            display: flex;
+            justify-content: center;
+            gap: 5px;
+            margin-bottom: 15px;
+        }
+
+        .card {
+            width: 45px;
+            height: 65px;
+            background-color: var(--card-front-bg);
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            position: relative;
+        }
+
+        .card.winner-card {
+            border: 1px solid var(--winner-gold);
+            box-shadow: 0 0 5px var(--winner-gold);
+        }
+
+        .card-rank {
+            font-size: 20px;
+            line-height: 1;
+            margin-top: 2px;
+        }
+
+        .card-suit {
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        .card.red { color: var(--card-red); }
+        .card.black { color: var(--card-black); }
+
+        /* Player Lists Containers */
+        .player-hand-list, .player-chip-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        /* Grid Mode for 4-6 Players */
+        .player-hand-list.grid-mode, .player-chip-list.grid-mode {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        /* Hand Row Styling */
+        .player-hand-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            transition: all 0.3s ease;
+        }
+
+        .player-hand-row.winner {
+            background: linear-gradient(90deg, rgba(255, 215, 0, 0.1), transparent);
+            border-left: 3px solid var(--winner-gold);
+        }
+
+        /* Adjustments for Grid Mode - Hand Row */
+        .player-hand-list.grid-mode .player-hand-row {
+            flex-direction: column;
+            align-items: flex-start;
+            padding: 10px;
+            gap: 5px;
+        }
+        
+        .player-hand-list.grid-mode .player-hand-row.winner {
+             background: rgba(255, 215, 0, 0.1);
+             border-left: none;
+             border-top: 3px solid var(--winner-gold);
+        }
+
+        .hand-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+        }
+
+        /* In grid mode, we might want to stack cards and info or keep them side-by-side but compact */
+        .player-hand-list.grid-mode .hand-info {
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        .hand-cards {
+            display: flex;
+            gap: 4px;
+        }
+        
+        .hand-cards .card {
+            width: 35px;
+            height: 50px;
+        }
+        
+        .hand-cards .card-rank { font-size: 16px; }
+        .hand-cards .card-suit { font-size: 14px; }
+
+        .hand-desc {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .player-hand-list.grid-mode .hand-desc {
+            align-items: center;
+        }
+
+        .hand-player-name {
+            font-size: 14px;
+            color: var(--text-color);
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100px;
+        }
+
+        .hand-type-badge {
+            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-top: 2px;
+            font-weight: bold;
+        }
+
+        .badge-winner {
+            background: linear-gradient(90deg, var(--winner-bg-gradient-start), var(--winner-bg-gradient-end));
+            color: #000;
+        }
+
+        .badge-loser {
+            background: var(--loser-bg);
+            color: #666;
+        }
+
+        /* 4. Chip Change Area */
+        .chip-stats {
+            /* Removed fixed height and overflow */
+            padding: 20px 20px;
+        }
+
+        .chip-stats-title {
+            font-size: 16px;
+            color: var(--text-sub-color);
+            margin-bottom: 10px;
+            font-weight: bold;
+            opacity: 0.8;
+        }
+
+        .chip-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 4px;
+        }
+
+        .chip-row.winner-row {
+            background: rgba(255, 215, 0, 0.1);
+            border: 1px solid rgba(255, 215, 0, 0.2);
+        }
+
+        /* Adjustments for Grid Mode - Chip Row */
+        .player-chip-list.grid-mode .chip-row {
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: 15px 10px;
+            gap: 5px;
+            border-bottom: none;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .player-chip-list.grid-mode .chip-row.winner-row {
+            background: rgba(255, 215, 0, 0.1);
+        }
+
+        .player-basic {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .player-chip-list.grid-mode .player-basic {
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .avatar {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: #ddd;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        
+        .avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+        .p-name {
+            font-size: 16px;
+            color: var(--text-color);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100px;
+        }
+
+        .chip-details {
+            text-align: right;
+        }
+
+        .player-chip-list.grid-mode .chip-details {
+            text-align: center;
+        }
+
+        .chip-diff {
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        .diff-plus { color: var(--profit-green); }
+        .diff-minus { color: var(--loss-red); }
+        .diff-zero { color: var(--neutral-grey); }
+
+        .chip-final {
+            font-size: 12px;
+            color: var(--neutral-grey);
+            margin-top: 2px;
+        }
+
+        /* 5. Bottom Actions */
+        .bottom-actions {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            padding: 20px 20px 34px 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            background: linear-gradient(to top, rgba(0,0,0,0.6), transparent);
+            z-index: 1000;
+        }
+
+        .action-btn {
+            flex: 1;
+            height: 50px;
+            border-radius: 25px;
+            border: none;
+            font-size: 18px;
+            font-weight: bold;
+            color: white;
+            cursor: pointer;
+            transition: transform 0.1s;
+            max-width: 200px;
+        }
+
+        .action-btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn-return {
+            background-color: var(--btn-orange);
+            width: 100%;
+            max-width: 280px; /* Make it wider since it's the only button */
+        }
+
+        /* Debug Controls */
+        .debug-controls {
+            position: fixed;
+            bottom: 120px; /* Moved up to avoid overlap with fixed footer */
+            right: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            z-index: 200;
+            opacity: 0.5;
+            transition: opacity 0.3s;
+        }
+        
+        .debug-controls:hover { opacity: 1; }
+
+        .debug-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(0,0,0,0.6);
+            color: white;
+            border: 1px solid #555;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .debug-btn.active {
+            background: var(--btn-orange);
+            border-color: var(--btn-orange);
+        }
+
+        /* Scrollbar hiding */
+        ::-webkit-scrollbar {
+            display: none;
+        }
+
+    </style>
+</head>
+<body>
+
+<div class="result-container">
+    <!-- 1. Top Info -->
+    <div class="top-info">
+        <div class="game-meta">房间号：8888 | 盲注：100/200</div>
+    </div>
+
+    <!-- 2. Core Result -->
+    <div class="core-result">
+        <div class="result-title">本局赢家</div>
+        <div class="winner-name" id="winnerName">John</div>
+        <div class="winner-hand-type" id="winnerHandType">牌型：同花顺</div>
+    </div>
+
+    <!-- 3. Hand Replay -->
+    <div class="hand-replay">
+        <div class="community-cards-section">
+            <div class="card red"><div class="card-suit">♥</div><div class="card-rank">A</div></div>
+            <div class="card red"><div class="card-suit">♥</div><div class="card-rank">K</div></div>
+            <div class="card red"><div class="card-suit">♥</div><div class="card-rank">Q</div></div>
+            <div class="card red"><div class="card-suit">♥</div><div class="card-rank">J</div></div>
+            <div class="card red"><div class="card-suit">♥</div><div class="card-rank">10</div></div>
+        </div>
+
+        <div class="player-hand-list" id="playerHandList">
+            <!-- Dynamic Content -->
+        </div>
+    </div>
+
+    <!-- 4. Chip Stats -->
+    <div class="chip-stats">
+        <div class="chip-stats-title">筹码变动</div>
+        <div class="player-chip-list" id="playerChipList">
+             <!-- Dynamic Content -->
+        </div>
+    </div>
+
+    <!-- 5. Bottom Actions -->
+    <div class="bottom-actions">
+        <button class="action-btn btn-return" onclick="returnToRoom()">返回房间</button>
+    </div>
+</div>
+
+<!-- Debug Controls -->
+<div class="debug-controls">
+    <button class="debug-btn" onclick="setPlayers(2)">2P</button>
+    <button class="debug-btn" onclick="setPlayers(3)">3P</button>
+    <button class="debug-btn" onclick="setPlayers(4)">4P</button>
+    <button class="debug-btn" onclick="setPlayers(5)">5P</button>
+    <button class="debug-btn" onclick="setPlayers(6)">6P</button>
+</div>
+
+<script>
+    function returnToRoom() {
+        window.location.href = 'room_waiting.html';
+    }
+
+    // Dummy Data
+    const allPlayers = [
+        { id: 1, name: 'John', isWinner: true, hand: '同花顺', cards: [{r:'K',s:'♥',c:'red'}, {r:'Q',s:'♥',c:'red'}], profit: 1200, balance: 11200, avatar: '#FFD700' },
+        { id: 2, name: 'Mike', isWinner: false, hand: '三条', cards: [{r:'A',s:'♠',c:'black'}, {r:'A',s:'♣',c:'black'}], profit: -800, balance: 9200, avatar: '#ccc' },
+        { id: 3, name: 'Sarah', isWinner: false, hand: '高牌', cards: [{r:'9',s:'♠',c:'black'}, {r:'8',s:'♣',c:'black'}], profit: -400, balance: 7800, avatar: '#ccc' },
+        { id: 4, name: 'Tom', isWinner: false, hand: '对子', cards: [{r:'7',s:'♦',c:'red'}, {r:'7',s:'♥',c:'red'}], profit: -200, balance: 5000, avatar: '#ccc' },
+        { id: 5, name: 'Alice', isWinner: false, hand: '高牌', cards: [{r:'4',s:'♠',c:'black'}, {r:'2',s:'♣',c:'black'}], profit: -100, balance: 4000, avatar: '#ccc' },
+        { id: 6, name: 'Bob', isWinner: false, hand: '高牌', cards: [{r:'3',s:'♥',c:'red'}, {r:'2',s:'♦',c:'red'}], profit: -100, balance: 3000, avatar: '#ccc' }
+    ];
+
+    function setPlayers(count) {
+        // Update active button
+        document.querySelectorAll('.debug-btn').forEach(btn => {
+            btn.classList.remove('active');
+            if(btn.innerText === count + 'P') btn.classList.add('active');
+        });
+
+        const players = allPlayers.slice(0, count);
+        const handList = document.getElementById('playerHandList');
+        const chipList = document.getElementById('playerChipList');
+        
+        // Clear lists
+        handList.innerHTML = '';
+        chipList.innerHTML = '';
+
+        // Layout Mode Settings
+        // Hand List: Always grid mode (2 columns) per user request
+        handList.classList.add('grid-mode');
+        
+        // Chip List: Always normal mode (vertical list) per user request
+        chipList.classList.remove('grid-mode');
+
+        // Generate Content
+        players.forEach(p => {
+            // 1. Hand Row
+            const handRow = document.createElement('div');
+            handRow.className = `player-hand-row ${p.isWinner ? 'winner' : ''}`;
+            
+            const winnerClass = p.isWinner ? 'winner-card' : '';
+            const badgeClass = p.isWinner ? 'badge-winner' : 'badge-loser';
+            
+            handRow.innerHTML = `
+                <div class="hand-info">
+                    <div class="hand-cards">
+                        <div class="card ${p.cards[0].c} ${winnerClass}">
+                            <div class="card-suit">${p.cards[0].s}</div><div class="card-rank">${p.cards[0].r}</div>
+                        </div>
+                        <div class="card ${p.cards[1].c} ${winnerClass}">
+                            <div class="card-suit">${p.cards[1].s}</div><div class="card-rank">${p.cards[1].r}</div>
+                        </div>
+                    </div>
+                    <div class="hand-desc">
+                        <span class="hand-player-name">${p.name} ${p.id === 1 ? '(我)' : ''}</span>
+                        <span class="hand-type-badge ${badgeClass}">${p.hand}</span>
+                    </div>
+                </div>
+            `;
+            handList.appendChild(handRow);
+
+            // 2. Chip Row
+            const chipRow = document.createElement('div');
+            chipRow.className = `chip-row ${p.isWinner ? 'winner-row' : ''}`;
+            
+            const diffClass = p.profit > 0 ? 'diff-plus' : (p.profit < 0 ? 'diff-minus' : 'diff-zero');
+            const diffSign = p.profit > 0 ? '+' : '';
+            const profitStr = diffSign + p.profit.toLocaleString();
+
+            chipRow.innerHTML = `
+                <div class="player-basic">
+                    <div class="avatar">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="${p.avatar}">
+                            <circle cx="50" cy="50" r="50"/>
+                        </svg>
+                    </div>
+                    <span class="p-name">${p.name}</span>
+                </div>
+                <div class="chip-details">
+                    <div class="chip-diff ${diffClass}">${profitStr}</div>
+                    <div class="chip-final">余额：${p.balance.toLocaleString()}</div>
+                </div>
+            `;
+            chipList.appendChild(chipRow);
+        });
+    }
+
+    // Initialize with 6 players by default to show full potential, or 3 as per typical
+    setPlayers(3);
+
+</script>
+
+</body>
+</html>

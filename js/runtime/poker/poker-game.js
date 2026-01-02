@@ -462,22 +462,12 @@ export default class PokerGame {
         let farIndices = [];
         let nearIndices = [];
         
-        const totalPlayers = this.room.players.length; // Or others.length + 1
+        const totalPlayers = this.room.players.length; 
         
-        // Distribution Logic based on User Specs
         if (totalPlayers <= 3) {
-            // All others go to Top
-            // N=2 (1 other): [0] -> Top
-            // N=3 (2 others): [0, 1] -> Top
             farIndices = others.map((_, i) => i);
             nearIndices = [];
         } else {
-            // N=4, 5, 6
-            // Top gets middle chunk, Bottom gets ends (0 and last)
-            // N=4 (3 others): Bottom [0, 2], Top [1]
-            // N=5 (4 others): Bottom [0, 3], Top [1, 2]
-            // N=6 (5 others): Bottom [0, 4], Top [1, 2, 3]
-            
             nearIndices.push(0); // First (Left)
             for (let i = 1; i < others.length - 1; i++) {
                 farIndices.push(i); // Middle (Top)
@@ -486,24 +476,32 @@ export default class PokerGame {
         }
 
         // Render Far Players (Top Area)
-        // Center them horizontally
-        // Slot width logic or just centered blocks?
-        // User says: "Fixed size: Width 20% of screen"
+        // User says: "Distance between player sub-blocks as large as possible, evenly distributed."
         const blockW = SCREEN_WIDTH * 0.20;
         const blockH = SCREEN_HEIGHT * 0.10;
+        const y = rect.y + (rect.h - blockH) / 2; // Vertically center
         
-        // Calculate total width needed for N blocks
-        // We can add some gap between blocks
-        const gap = 10;
-        const totalContentW = farIndices.length * blockW + (farIndices.length - 1) * gap;
-        const startX = rect.x + (rect.w - totalContentW) / 2;
-        const y = rect.y + (rect.h - blockH) / 2; // Vertically center in the band
-        
-        farIndices.forEach((idx, i) => {
-            const pObj = others[idx];
-            const x = startX + i * (blockW + gap);
+        const count = farIndices.length;
+        if (count === 0) {
+            // No top players
+        } else if (count === 1) {
+            // Center single player
+            const x = rect.x + (rect.w - blockW) / 2;
+            const pObj = others[farIndices[0]];
             this.renderPlayerBlock(ctx, pObj.player, x, y, blockW, blockH, pObj.originalIndex);
-        });
+        } else {
+            // Distribute evenly across the width
+            // Margins: 10px from edges
+            const margin = 10;
+            const availableW = rect.w - 2 * margin - blockW; // Width from first start to last start
+            const step = availableW / (count - 1);
+            
+            farIndices.forEach((idx, i) => {
+                const pObj = others[idx];
+                const x = rect.x + margin + i * step;
+                this.renderPlayerBlock(ctx, pObj.player, x, y, blockW, blockH, pObj.originalIndex);
+            });
+        }
         
         // Save near indices for next method
         this._nearIndices = nearIndices; 
@@ -589,20 +587,38 @@ export default class PokerGame {
             ctx.strokeStyle = THEME.colors.accent;
             ctx.lineWidth = 3;
             this.roundRect(ctx, x, y, w, h, 12, false, true);
-            
-            // Optional: Glow
-            // ctx.shadowColor = THEME.colors.accent;
-            // ctx.shadowBlur = 10;
-            // ctx.stroke();
-            // ctx.shadowBlur = 0;
         }
         ctx.restore();
 
-        // 3. Avatar (Top Center)
-        // Radius relative to height, but keep it reasonable
-        const avR = h * 0.28; 
-        const avY = y + 15 + avR; // Top padding 15
+        // Internal Layout Calculation to avoid overlap
+        // h is small (10% height, approx 60-80px on phones)
+        // Top Padding: 8px
+        // Avatar: Radius approx 20-24px (Dia 40-48px)
+        // Name: Font 12px, Height ~14px
+        // Chip Pill: Height 16px
+        // Bottom Padding: 4px
         
+        // Let's constrain Avatar size based on available height
+        // Available H = h - 8 (top) - 14 (name) - 16 (chip) - 4 (bottom) - 4 (gap) = h - 46
+        // Max Avatar Dia = h - 46. If h=80, Dia=34. R=17.
+        
+        const pillH = 16;
+        const nameH = 14;
+        const paddingY = 6;
+        const gap = 2;
+        
+        // Bottom Up Layout
+        const pillY = y + h - pillH - paddingY;
+        const nameY = pillY - nameH - gap; // Bottom of name is top of pill - gap
+        
+        // Remaining space for avatar
+        const avBottom = nameY - gap;
+        const avTop = y + paddingY;
+        const maxAvH = avBottom - avTop;
+        const avR = Math.min(maxAvH / 2, h * 0.22); // Cap at 22% height
+        const avY = avTop + maxAvH / 2; // Center in available space
+        
+        // 3. Avatar (Top Center)
         ctx.save();
         ctx.beginPath();
         ctx.arc(cx, avY, avR, 0, Math.PI * 2);
@@ -641,82 +657,34 @@ export default class PokerGame {
         ctx.fillStyle = '#37474F'; // Dark Text
         ctx.font = 'bold 12px Arial';
         ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
+        ctx.textBaseline = 'middle'; // Center vertically in its slot
         const safeName = p.name.length > 8 ? p.name.substring(0, 6) + '..' : p.name;
-        ctx.fillText(safeName, cx, avY + avR + 5);
+        // nameY is top of name area, height is nameH
+        ctx.fillText(safeName, cx, nameY + nameH/2);
 
         // 5. Chips Pill (Orange)
         const chipVal = `${p.chips >= 1000 ? (p.chips/1000).toFixed(1) + 'k' : p.chips}`;
         ctx.font = 'bold 11px Arial';
         const tm = ctx.measureText(chipVal);
         const pillW = tm.width + 16;
-        const pillH = 18;
-        const pillY = y + h - pillH - 8; // Bottom padding 8
         const pillX = cx - pillW / 2;
         
         ctx.fillStyle = THEME.colors.chipBg; // Orange
-        this.roundRect(ctx, pillX, pillY, pillW, pillH, 9, true);
+        this.roundRect(ctx, pillX, pillY, pillW, pillH, 8, true);
         
         ctx.fillStyle = '#3E2723'; // Dark Brown Text
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(chipVal, cx, pillY + pillH/2);
 
-        // 6. Status Badge (Top Right Corner - Overlapping)
-        // Show if: Acting, All-in, Folded, or Call/Check/Raise action happened recently
-        // Priority: All-in > Folded > Action > Acting
-        
-        let badgeText = '';
-        let badgeColor = THEME.colors.secondary; // Default Grey
-        
-        if (p.status === 'folded') {
-            badgeText = 'Folded';
-            badgeColor = THEME.colors.secondary;
-        } else if (p.allIn) {
-            badgeText = 'All-in';
-            badgeColor = THEME.colors.danger;
-        } else if (p.lastAction) {
-            // Capitalize first letter
-            badgeText = p.lastAction.charAt(0).toUpperCase() + p.lastAction.slice(1);
-            if (p.lastAction === 'raise' || p.lastAction === 'bet') badgeColor = THEME.colors.warning;
-            else if (p.lastAction === 'call' || p.lastAction === 'check') badgeColor = THEME.colors.primary;
-        } else if (isCurrent) {
-            badgeText = 'Acting';
-            badgeColor = THEME.colors.accent; // Yellow
-        }
-        
-        if (badgeText) {
-             ctx.font = 'bold 10px Arial';
-             const bTm = ctx.measureText(badgeText);
-             const badgeW = bTm.width + 10;
-             const badgeH = 16;
-             // Position: Top Right corner of the card, centered on the corner point
-             // Or just inside? Image shows it hanging off the top right edge.
-             // Let's put it at x + w - badgeW/2, y - badgeH/2 ?
-             // Actually image shows it aligned with right edge, slightly sticking out top.
-             const badgeX = x + w - badgeW + 4; 
-             const badgeY = y - 6;
-             
-             ctx.fillStyle = badgeColor;
-             this.roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 4, true);
-             
-             ctx.fillStyle = '#fff';
-             if (badgeColor === THEME.colors.accent) ctx.fillStyle = '#3E2723'; // Dark text on yellow
-             
-             ctx.textAlign = 'center';
-             ctx.textBaseline = 'middle';
-             ctx.fillText(badgeText, badgeX + badgeW/2, badgeY + badgeH/2);
-        }
-
-        // 7. Dealer Button (Top Left)
+        // 6. Dealer Button (Top Left)
          const sbIndex = this.room.smallBlindIndex;
         if (typeof sbIndex === 'number') {
             let dIndex = (sbIndex - 1 + this.room.players.length) % this.room.players.length;
             if (originalIndex === dIndex) {
                 const dR = 7;
-                const dX = x; // On the corner?
+                const dX = x; // On the corner
                 const dY = y; 
-                // Let's put it slightly inside or overlapping corner
                 
                 ctx.fillStyle = '#fff';
                 ctx.beginPath();
@@ -735,17 +703,61 @@ export default class PokerGame {
             }
         }
         
-        // 8. Small Cards (if Showdown)
+        // 7. Small Cards (if Showdown)
         if (p.status === 'playing' && !isFolded && this.room.game && this.room.game.stage === 'showdown' && p.hand) {
-             // Overlap cards on bottom right of Avatar? Or right side of card?
-             // Space is tight. Let's put them small at bottom right of the card.
-             const cW = 20;
-             const cH = 28;
-             const cY = y + h - cH - 4;
-             const cX = x + w - cW * 2 - 4;
+             const cW = 18;
+             const cH = 26;
+             // Put them at bottom right, overlapping slightly if needed but try to stay inside or just on edge
+             const cY = y + h - cH - 2;
+             const cX = x + w - cW * 2 - 2;
              
              this.drawCard(ctx, p.hand[0], cX, cY, cW, cH);
              this.drawCard(ctx, p.hand[1], cX + cW + 2, cY, cW, cH);
+        }
+        
+        // 8. Status Badge (Top Right Corner - Overlapping) - Draw LAST to be on top
+        // Priority: All-in > Folded > Action > Acting
+        let badgeText = '';
+        let badgeColor = THEME.colors.secondary; // Default Grey
+        
+        if (p.status === 'folded') {
+            badgeText = 'Folded';
+            badgeColor = THEME.colors.secondary;
+        } else if (p.allIn) {
+            badgeText = 'All-in';
+            badgeColor = THEME.colors.danger;
+        } else if (p.lastAction) {
+            badgeText = p.lastAction.charAt(0).toUpperCase() + p.lastAction.slice(1);
+            if (p.lastAction === 'raise' || p.lastAction === 'bet') badgeColor = THEME.colors.warning;
+            else if (p.lastAction === 'call' || p.lastAction === 'check') badgeColor = THEME.colors.primary;
+        } else if (isCurrent) {
+            badgeText = 'Acting';
+            badgeColor = THEME.colors.accent; // Yellow
+        }
+        
+        if (badgeText) {
+             ctx.font = 'bold 10px Arial';
+             const bTm = ctx.measureText(badgeText);
+             const badgeW = bTm.width + 12;
+             const badgeH = 18;
+             // Overlap top right corner
+             const badgeX = x + w - badgeW + 6; 
+             const badgeY = y - 6;
+             
+             ctx.shadowColor = 'rgba(0,0,0,0.2)';
+             ctx.shadowBlur = 4;
+             
+             ctx.fillStyle = badgeColor;
+             this.roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 6, true);
+             
+             ctx.shadowBlur = 0;
+             
+             ctx.fillStyle = '#fff';
+             if (badgeColor === THEME.colors.accent) ctx.fillStyle = '#3E2723'; 
+             
+             ctx.textAlign = 'center';
+             ctx.textBaseline = 'middle';
+             ctx.fillText(badgeText, badgeX + badgeW/2, badgeY + badgeH/2);
         }
     }
 
