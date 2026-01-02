@@ -445,61 +445,61 @@ export default class PokerGame {
     }
 
     renderFarPlayers(ctx, rect) {
-        // Render players in the "Far" semi-circle (Top half of the table)
-        // We have others array. 
-        // Strategy: Divide others into Near (left/right of me) and Far (opposite).
-        // Let's say with 9 players (1 me + 8 others):
-        // 1,2 are Near Left. 7,8 are Near Right. 3,4,5,6 are Far.
-        // Actually user said: "Far Players" -> "Distance larger"
-        // "Near Players" -> "Distance closer"
+        // Dynamic Player Distribution Rule:
+        // Total Players (N) -> Others (N-1)
+        // N=6 (5 others): 3 Top, 2 Bottom
+        // N=5 (4 others): 2 Top, 2 Bottom
+        // N=4 (3 others): 1 Top, 2 Bottom
+        // N=3 (2 others): 2 Top, 0 Bottom
+        // N=2 (1 other):  1 Top, 0 Bottom
         
         const { others } = this.getRelativePlayers();
         if (others.length === 0) return;
 
-        // Simple Heuristic: 
-        // If count <= 2 (Head-up or 3-max), all others are Far? Or split?
-        // Let's just distribute strictly by index to fill the slots.
-        // Far Area covers indices roughly in the middle of the 'others' array.
-        
-        // We will define specific slots in Far Area and Near Area.
-        // Far Area: can hold up to 5 players?
-        // Near Area: can hold up to 4 players (2 left, 2 right)?
-        
-        const count = others.length;
-        // Split indices
-        // e.g. 8 others: 0,1 (NearL), 2,3,4,5 (Far), 6,7 (NearR)
-        // e.g. 1 other: 0 (Far - Heads up usually opposite)
-        
         let farIndices = [];
         let nearIndices = [];
-
-        if (count === 1) {
-            farIndices = [0];
-        } else if (count <= 4) {
-             // 1 Near L, 1 Near R, rest Far
-             // others[0] -> Near L
-             // others[last] -> Near R
-             // middle -> Far
-             nearIndices.push(0);
-             for(let i=1; i<count-1; i++) farIndices.push(i);
-             nearIndices.push(count-1);
+        
+        const totalPlayers = this.room.players.length; // Or others.length + 1
+        
+        // Distribution Logic based on User Specs
+        if (totalPlayers <= 3) {
+            // All others go to Top
+            // N=2 (1 other): [0] -> Top
+            // N=3 (2 others): [0, 1] -> Top
+            farIndices = others.map((_, i) => i);
+            nearIndices = [];
         } else {
-             // 2 Near L, 2 Near R, rest Far
-             nearIndices.push(0);
-             nearIndices.push(1);
-             for(let i=2; i<count-2; i++) farIndices.push(i);
-             nearIndices.push(count-2);
-             nearIndices.push(count-1);
+            // N=4, 5, 6
+            // Top gets middle chunk, Bottom gets ends (0 and last)
+            // N=4 (3 others): Bottom [0, 2], Top [1]
+            // N=5 (4 others): Bottom [0, 3], Top [1, 2]
+            // N=6 (5 others): Bottom [0, 4], Top [1, 2, 3]
+            
+            nearIndices.push(0); // First (Left)
+            for (let i = 1; i < others.length - 1; i++) {
+                farIndices.push(i); // Middle (Top)
+            }
+            nearIndices.push(others.length - 1); // Last (Right)
         }
 
-        // Render Far
-        const slotW = rect.w / (farIndices.length + 1);
-        const y = rect.y + rect.h / 2;
+        // Render Far Players (Top Area)
+        // Center them horizontally
+        // Slot width logic or just centered blocks?
+        // User says: "Fixed size: Width 20% of screen"
+        const blockW = SCREEN_WIDTH * 0.20;
+        const blockH = SCREEN_HEIGHT * 0.10;
+        
+        // Calculate total width needed for N blocks
+        // We can add some gap between blocks
+        const gap = 10;
+        const totalContentW = farIndices.length * blockW + (farIndices.length - 1) * gap;
+        const startX = rect.x + (rect.w - totalContentW) / 2;
+        const y = rect.y + (rect.h - blockH) / 2; // Vertically center in the band
         
         farIndices.forEach((idx, i) => {
-             const pObj = others[idx];
-             const x = slotW * (i + 1);
-             this.renderSeat(ctx, pObj.player, x, y, pObj.originalIndex, 0.8); // 0.8 scale
+            const pObj = others[idx];
+            const x = startX + i * (blockW + gap);
+            this.renderPlayerBlock(ctx, pObj.player, x, y, blockW, blockH, pObj.originalIndex);
         });
         
         // Save near indices for next method
@@ -512,53 +512,260 @@ export default class PokerGame {
         const indices = this._nearIndices || [];
         if (indices.length === 0) return;
 
-        // Split Left and Right
-        // The first half of indices are Left, second half are Right (because of rotation order)
-        // others array is clockwise from me.
-        // so index 0, 1 are Immediate Left.
-        // index last, last-1 are Immediate Right.
+        // Render Near Players (Bottom Area)
+        // Indices usually [0, last]
+        // 0 is Left (Near Left)
+        // last is Right (Near Right)
         
-        // Actually, in the array others[0] is (Me + 1), which is to my LEFT.
-        // others[last] is (Me - 1), which is to my RIGHT.
+        const blockW = SCREEN_WIDTH * 0.20;
+        const blockH = SCREEN_HEIGHT * 0.10;
         
-        const leftIndices = indices.filter(i => i < others.length / 2);
-        const rightIndices = indices.filter(i => i >= others.length / 2);
+        // Left Side: 0
+        // Right Side: last
+        
+        // If we have 2 near players:
+        // One at Left (margin), One at Right (margin)
+        
+        // If we only have 1 near player (shouldn't happen with current logic for N>=4, but robust check)
+        
+        const leftIndex = indices[0]; // The first one is definitely Left
+        // If indices.length > 1, the last one is Right.
+        
+        const y = rect.y + (rect.h - blockH) / 2;
+        
+        // Left Position
+        // Align to left with some margin
+        const leftX = rect.x + 10;
+        if (leftIndex !== undefined) {
+             const pObj = others[leftIndex];
+             this.renderPlayerBlock(ctx, pObj.player, leftX, y, blockW, blockH, pObj.originalIndex);
+        }
+        
+        // Right Position
+        // Align to right
+        if (indices.length > 1) {
+            const rightIndex = indices[indices.length - 1];
+            const rightX = rect.x + rect.w - blockW - 10;
+            const pObj = others[rightIndex];
+            this.renderPlayerBlock(ctx, pObj.player, rightX, y, blockW, blockH, pObj.originalIndex);
+        }
+    }
 
-        // Render Left (Top to Bottom or Bottom to Top?)
-        // In "Near" area (20% height).
-        // Let's just stack them vertically or horizontally depending on space.
-        // Since it's a "Lower Half" arc.
+    renderPlayerBlock(ctx, p, x, y, w, h, originalIndex) {
+        // Design Specs:
+        // - No overlap
+        // - W: 20%, H: 10%
+        // - Content Priority: Avatar, Name, Chips, Action Label, Fold Marker
         
-        // Left Side
-        const leftX = rect.w * 0.15;
-        const rightX = rect.w * 0.85;
-        
-        // Distribute Y in the rect
-        const stepY = rect.h / (Math.max(leftIndices.length, rightIndices.length) + 1);
-        
-        leftIndices.forEach((idx, i) => {
-            const pObj = others[idx];
-            // 0 is closest to me (Bottom of Left column?) or Top?
-            // Standard poker table: 0 is immediate left.
-            // Visually immediate left is usually bottom-left.
-            // So we should render from bottom up? or top down?
-            // Let's render top-down in the Near box, but logic says 0 is closest to me.
-            // We'll put 0 at the bottom of the Near box (closest to Self Area).
-            const y = rect.y + rect.h - stepY * (i + 1); 
-            this.renderSeat(ctx, pObj.player, leftX, y, pObj.originalIndex, 0.9);
-        });
+        // 1. Folded State (Semi-transparent)
+        const isFolded = (p.status === 'folded');
+        ctx.save();
+        if (isFolded) {
+            ctx.globalAlpha = 0.5;
+        }
 
-        // Right Side (others[last] is immediate right)
-        // So others[last] should be bottom-right.
-        // others[last-1] above it.
-        // rightIndices are like [6, 7] for 8 others. 7 is last.
-        // We iterate reversed?
-        const sortedRight = [...rightIndices].reverse(); // Now [7, 6]
-        sortedRight.forEach((idx, i) => {
-            const pObj = others[idx];
-            const y = rect.y + rect.h - stepY * (i + 1);
-            this.renderSeat(ctx, pObj.player, rightX, y, pObj.originalIndex, 0.9);
-        });
+        // Debug: Draw Block Boundary (Optional, remove later)
+        // ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        // ctx.strokeRect(x, y, w, h);
+
+        const centerX = x + w / 2;
+        const centerY = y + h / 2;
+        
+        // 2. Avatar (Center, Large)
+        // Max radius that fits height with padding
+        // Available Height ~ 60% for Avatar?
+        // Layout:
+        // Top: Action Label (Overlay)
+        // Middle: Avatar
+        // Bottom: Name & Chips
+        
+        const r = Math.min(w, h) * 0.35; 
+        const avY = centerY - 10; // Shift up slightly to leave room for text
+        
+        // Active Player Glow
+        const isCurrent = (this.room.game && this.room.game.currentPlayerIndex === originalIndex);
+        if (isCurrent) {
+            ctx.shadowColor = THEME.colors.accent;
+            ctx.shadowBlur = 15;
+            ctx.beginPath();
+            ctx.arc(centerX, avY, r + 2, 0, Math.PI * 2);
+            ctx.strokeStyle = THEME.colors.accent;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+
+        // Avatar Image
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(centerX, avY, r, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.fillStyle = '#333';
+        ctx.fillRect(centerX - r, avY - r, r * 2, r * 2);
+        
+        if (p.avatarUrl && this.avatarImages[p.avatarUrl]?.loaded) {
+            ctx.drawImage(this.avatarImages[p.avatarUrl].img, centerX - r, avY - r, r * 2, r * 2);
+        } else {
+            ctx.fillStyle = '#adb5bd';
+            ctx.fillRect(centerX - r, avY - r, r * 2, r * 2);
+            ctx.fillStyle = '#fff';
+            ctx.font = `bold ${Math.floor(r)}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(p.name.charAt(0).toUpperCase(), centerX, avY);
+        }
+        ctx.restore();
+        
+        // Avatar Border
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(centerX, avY, r, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // 3. Name & Chips (Bottom)
+        // Background Pill
+        const pillW = w * 0.9;
+        const pillH = h * 0.35;
+        const pillX = centerX - pillW / 2;
+        const pillY = avY + r - 5; // Overlap bottom of avatar slightly
+        
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        this.roundRect(ctx, pillX, pillY, pillW, pillH, pillH / 2, true);
+        
+        // Text
+        ctx.textAlign = 'center';
+        
+        // Name
+        ctx.fillStyle = THEME.colors.textSecondary;
+        ctx.font = `${Math.floor(h * 0.15)}px Arial`; // Adaptive font
+        ctx.textBaseline = 'bottom';
+        const safeName = p.name.length > 8 ? p.name.substring(0, 6) + '..' : p.name;
+        ctx.fillText(safeName, centerX, pillY + pillH / 2 - 1);
+        
+        // Chips
+        ctx.fillStyle = THEME.colors.accent;
+        ctx.font = `bold ${Math.floor(h * 0.16)}px Arial`;
+        ctx.textBaseline = 'top';
+        ctx.fillText(`$${p.chips}`, centerX, pillY + pillH / 2 + 1);
+
+        // 4. Action Label (Top Right)
+        if (p.lastAction || p.bet > 0) {
+            let label = p.lastAction || '';
+            // If bet > 0 and action is 'bet'/'raise'/'call', show amount?
+            // User requested "Action Content" e.g. "下注", "跟注"
+            // Let's combine if there is a bet amount
+            if (p.bet > 0 && label) label += ` $${p.bet}`;
+            else if (p.bet > 0) label = `$${p.bet}`;
+            
+            if (label) {
+                ctx.font = `bold ${Math.floor(h * 0.14)}px Arial`;
+                const tm = ctx.measureText(label);
+                const tagW = tm.width + 10;
+                const tagH = h * 0.2;
+                const tagX = x + w - tagW; // Align Right
+                const tagY = y; // Align Top
+                
+                // Tag Bg
+                ctx.fillStyle = THEME.colors.primary;
+                if (p.lastAction === 'fold') ctx.fillStyle = THEME.colors.danger;
+                if (p.lastAction === 'raise') ctx.fillStyle = THEME.colors.warning;
+                
+                // Rounded corner only on bottom-left? Or full rounded
+                this.roundRect(ctx, tagX, tagY, tagW, tagH, 4, true);
+                
+                ctx.fillStyle = '#fff';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(label, tagX + tagW / 2, tagY + tagH / 2);
+            }
+        }
+        
+        // 5. Folded Marker (Visual Cross or Icon?)
+        if (isFolded) {
+            // Draw a red X over the avatar? Or just relying on opacity is enough?
+            // User said "若已弃牌需显示明确的视觉标记"
+            ctx.strokeStyle = THEME.colors.danger;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            // X over avatar
+            const d = r * 0.7;
+            ctx.moveTo(centerX - d, avY - d);
+            ctx.lineTo(centerX + d, avY + d);
+            ctx.moveTo(centerX + d, avY - d);
+            ctx.lineTo(centerX - d, avY + d);
+            ctx.stroke();
+            
+            // Text "FOLD"
+            ctx.fillStyle = THEME.colors.danger;
+            ctx.font = 'bold 12px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            // ctx.fillText('FOLD', centerX, avY);
+        }
+
+        ctx.restore();
+        
+        // 6. Dealer Button (Relative to block)
+        // Check dealer index
+         const sbIndex = this.room.smallBlindIndex;
+        if (typeof sbIndex === 'number') {
+            let dIndex = (sbIndex - 1 + this.room.players.length) % this.room.players.length;
+            if (originalIndex === dIndex) {
+                const dR = 8;
+                const dX = x + 12; // Top Left corner
+                const dY = y + 12;
+                
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(dX, dY, dR, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#000';
+                ctx.font = 'bold 10px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('D', dX, dY);
+            }
+        }
+        
+        // 7. Cards (If showdown or cheat/admin view?)
+        // The spec didn't explicitly ask for cards in the "Player Block" for others, 
+        // but typically we show backs or hands.
+        // Let's render small cards to the right of avatar if there's space?
+        // Or overlay?
+        // Given 20% width, it's tight.
+        // Let's put cards to the right of avatar, overlapping the pill?
+        // Or maybe skip cards for others in this simplified block view unless showdown?
+        // User spec didn't mention cards for others, only "Avatar, Name, Chips, Action, Fold".
+        // But poker needs cards. I'll keep them small next to avatar if active.
+        
+        if (p.status === 'playing' && !isFolded) {
+             const cardW = 16;
+             const cardH = 22;
+             // Position: Bottom Right of Avatar
+             const cardX = centerX + r;
+             const cardY = avY;
+             
+             // Draw Backs
+             // this.drawCardBack(ctx, cardX, cardY, cardW, cardH);
+             // this.drawCardBack(ctx, cardX + 5, cardY, cardW, cardH);
+             // Actually, let's keep it clean as per spec. If user didn't ask for cards in block, maybe they are less important or handled elsewhere?
+             // But existing game logic shows cards. I should keep them.
+             // Let's place them neatly.
+             
+             const cX = centerX + r + 2;
+             const cY = avY - cardH/2;
+             
+             const isShowdown = (this.room.game && this.room.game.stage === 'showdown');
+             
+             if (isShowdown && p.hand) {
+                 this.drawCard(ctx, p.hand[0], cX, cY, cardW, cardH);
+                 this.drawCard(ctx, p.hand[1], cX + cardW + 2, cY, cardW, cardH);
+             } else {
+                 this.drawCardBack(ctx, cX, cY, cardW, cardH);
+                 this.drawCardBack(ctx, cX + 5, cY, cardW, cardH);
+             }
+        }
     }
 
     renderBoard(ctx, rect) {
