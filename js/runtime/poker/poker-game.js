@@ -211,6 +211,18 @@ export default class PokerGame {
     }
 
     renderWaiting(ctx) {
+        // Back Button (Top Left)
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.beginPath();
+        ctx.arc(this.backBtnX + this.backBtnRadius, this.backBtnY, this.backBtnRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '20px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('<', this.backBtnX + this.backBtnRadius, this.backBtnY);
+        ctx.textBaseline = 'alphabetic';
+
         // Grid Layout for Waiting Room
         const players = this.room.players;
         const meIndex = players.findIndex(p => p.id === this.userId);
@@ -651,6 +663,18 @@ export default class PokerGame {
             ctx.fillText('等待房主开始下一局...', SCREEN_WIDTH / 2, SCREEN_HEIGHT - 60);
             this.resultBtn = null;
         }
+
+        // Back Button (Top Left)
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.beginPath();
+        ctx.arc(this.backBtnX + this.backBtnRadius, this.backBtnY, this.backBtnRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '20px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('<', this.backBtnX + this.backBtnRadius, this.backBtnY);
+        ctx.textBaseline = 'alphabetic';
     }
 
     renderSmallCard(ctx, card, x, y, w, h) {
@@ -1053,30 +1077,19 @@ export default class PokerGame {
                 'call': '跟注',
                 'raise': '加注',
                 'bet': '下注',
-                'fold': '弃牌',
-                'SB': '小盲',
-                'BB': '大盲'
+                'fold': '弃牌'
+                // SB/BB hidden as per request
             };
-            badgeText = actionMap[p.lastAction] || p.lastAction;
             
-            if (p.lastAction === 'raise' || p.lastAction === 'bet') badgeColor = THEME.colors.warning;
-            else if (p.lastAction === 'call' || p.lastAction === 'check' || p.lastAction === 'SB' || p.lastAction === 'BB') badgeColor = THEME.colors.primary;
-        } else {
-            // No recent action (e.g. new round), check SB/BB Position
-            // Only if game is running
-            if (this.room.dealerIndex !== undefined) {
-                const playerCount = this.room.players.length;
-                const sbIndex = (this.room.dealerIndex + 1) % playerCount;
-                const bbIndex = (this.room.dealerIndex + 2) % playerCount;
+            // Only show if in map (skip SB/BB)
+            if (actionMap[p.lastAction]) {
+                badgeText = actionMap[p.lastAction];
                 
-                if (p.originalIndex === sbIndex) {
-                    badgeText = '小盲';
-                    badgeColor = THEME.colors.primary;
-                } else if (p.originalIndex === bbIndex) {
-                    badgeText = '大盲';
-                    badgeColor = THEME.colors.primary;
-                }
+                if (p.lastAction === 'raise' || p.lastAction === 'bet') badgeColor = THEME.colors.warning;
+                else if (p.lastAction === 'call' || p.lastAction === 'check') badgeColor = THEME.colors.primary;
             }
+        } else {
+            // No recent action - Do not show SB/BB labels
         }
         
         if (isCurrent && !badgeText) {
@@ -1634,6 +1647,16 @@ export default class PokerGame {
     async touchHandler(x, y) {
         this.lastTouchY = y;
         this.isDragging = false;
+
+        // Check Back Button (Top Left) - Valid for Waiting and Showdown
+        const isPlaying = this.room && this.room.status === 'playing';
+        if (!isPlaying) {
+             const dx = x - (this.backBtnX + this.backBtnRadius);
+             const dy = y - this.backBtnY;
+             if (dx*dx + dy*dy <= this.backBtnRadius * this.backBtnRadius) {
+                 return 'back'; 
+             }
+        }
 
         // 1. Exit Modal Handling (Priority)
         if (this.showExitModal && this.modalBtns) {

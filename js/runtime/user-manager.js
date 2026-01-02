@@ -91,14 +91,7 @@ export default class UserManager {
     } catch (e) {
       console.error('Login/Auth failed', e);
       this.isLoggingIn = false;
-      // Fallback
-      this.userInfo = {
-          nickName: 'Guest',
-          avatarUrl: '',
-          openid: this.openid || 'guest_id',
-          chips: 1000
-      };
-      return this.userInfo;
+      throw e; // Propagate error, do not allow guest login
     }
   }
 
@@ -106,29 +99,38 @@ export default class UserManager {
     return this.userInfo;
   }
 
-  async updateUserProfile(nickName, avatarUrl) {
-      if (!this.userInfo || !this.userInfo._id) return false;
-
-      try {
-          const updates = {};
-          if (nickName) {
-              updates.nickName = nickName;
-              this.userInfo.nickName = nickName;
-          }
-          if (avatarUrl) {
-              updates.avatarUrl = avatarUrl;
-              this.userInfo.avatarUrl = avatarUrl;
-          }
-
-          if (Object.keys(updates).length > 0) {
-              await this.users.doc(this.userInfo._id).update({
-                  data: updates
-              });
-              return true;
-          }
-      } catch (e) {
-          console.error('Update profile failed', e);
-      }
-      return false;
+  async requireUserInfo() {
+    return new Promise((resolve, reject) => {
+        wx.getUserProfile({
+            desc: '用于完善会员资料',
+            success: async (res) => {
+                const { nickName, avatarUrl } = res.userInfo;
+                if (this.userInfo) {
+                    this.userInfo.nickName = nickName;
+                    this.userInfo.avatarUrl = avatarUrl;
+                    
+                    // Update DB
+                    try {
+                        await this.users.doc(this.userInfo._id).update({
+                            data: { nickName, avatarUrl }
+                        });
+                        console.log('User info updated from WeChat');
+                        resolve(this.userInfo);
+                    } catch (e) {
+                        console.error('DB update failed', e);
+                        // Even if DB fails, we resolve with local info so they can play
+                        resolve(this.userInfo); 
+                    }
+                } else {
+                    reject(new Error('User not logged in'));
+                }
+            },
+            fail: (err) => {
+                console.error('getUserProfile failed', err);
+                reject(err);
+            }
+        });
+    });
   }
 }
+

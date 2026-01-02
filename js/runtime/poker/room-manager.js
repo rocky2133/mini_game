@@ -359,26 +359,24 @@ export default class RoomManager {
           // Split pot
           if (winners.length > 0) {
               const splitAmount = Math.floor(game.pot / winners.length);
-              
-              // First, assign chips
               winners.forEach(w => {
                   w.chips += splitAmount;
-                  w.receivedAmount = splitAmount; // Temp tracking
+                  w.winAmount = (w.winAmount || 0) + splitAmount;
               });
               // Handle remainder (give to first winner)
               const remainder = game.pot - (splitAmount * winners.length);
               if (remainder > 0) {
                   winners[0].chips += remainder;
-                  winners[0].receivedAmount += remainder;
+                  winners[0].winAmount = (winners[0].winAmount || 0) + remainder;
               }
-              
-              // Calculate Round Changes for ALL players
-              players.forEach(p => {
-                  const received = p.receivedAmount || 0;
-                  p.roundChange = received - (p.totalContribution || 0);
-                  delete p.receivedAmount; // Cleanup temp
-              });
           }
+          
+          // Calculate Round Changes
+          players.forEach(p => {
+              p.roundChange = (p.winAmount || 0) - (p.totalContribution || 0);
+              // Clean up temporary field
+              delete p.winAmount;
+          });
           
           game.winners = winners;
           // Trigger AI Comment
@@ -521,6 +519,7 @@ export default class RoomManager {
             p.hand = [deck.deal(), deck.deal()];
             // Convert cards to plain objects to ensure they save correctly
             p.hand = p.hand.map(c => ({ suit: c.suit, rank: c.rank }));
+            p.totalContribution = 0; // Initialize for new round
             return p;
         });
 
@@ -547,12 +546,14 @@ export default class RoomManager {
         if (players[sbIndex].chips >= sbAmount) {
             players[sbIndex].chips -= sbAmount;
             players[sbIndex].bet = sbAmount;
+            players[sbIndex].totalContribution = sbAmount;
             players[sbIndex].lastAction = 'SB';
         }
         
         if (players[bbIndex].chips >= bbAmount) {
             players[bbIndex].chips -= bbAmount;
             players[bbIndex].bet = bbAmount;
+            players[bbIndex].totalContribution = bbAmount;
             players[bbIndex].lastAction = 'BB';
         }
 

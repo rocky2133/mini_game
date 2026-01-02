@@ -1,4 +1,5 @@
 import { SCREEN_WIDTH, SCREEN_HEIGHT } from '../render';
+import UserManager from './user-manager';
 
 export default class HomePage {
   constructor() {
@@ -45,14 +46,44 @@ export default class HomePage {
     ctx.textBaseline = 'alphabetic';
   }
 
-  touchHandler(x, y) {
+  async touchHandler(x, y) {
+    let target = null;
     if (x >= this.btnX && x <= this.btnX + this.btnWidth) {
         if (y >= this.diceBtnY && y <= this.diceBtnY + this.btnHeight) {
-            return 'dice_game';
+            target = 'dice_game';
+        } else if (y >= this.pokerBtnY && y <= this.pokerBtnY + this.btnHeight) {
+            target = 'poker_menu';
         }
-        if (y >= this.pokerBtnY && y <= this.pokerBtnY + this.btnHeight) {
-            return 'poker_menu';
+    }
+
+    if (target) {
+        const um = UserManager.getInstance();
+        const user = um.getCurrentUser();
+        
+        if (!user) {
+             wx.showToast({ title: 'Logging in...', icon: 'none' });
+             try {
+                 await um.login();
+             } catch (e) {
+                 wx.showToast({ title: 'Login Failed', icon: 'none' });
+                 return null;
+             }
         }
+        
+        // Check if we need to fetch info
+        const currentUser = um.getCurrentUser();
+        const needsInfo = !currentUser.avatarUrl || currentUser.nickName.startsWith('Player_');
+        
+        if (needsInfo) {
+            try {
+                await um.requireUserInfo();
+                return target;
+            } catch (e) {
+                wx.showToast({ title: 'Auth Required', icon: 'none' });
+                return null;
+            }
+        }
+        return target;
     }
     return null;
   }

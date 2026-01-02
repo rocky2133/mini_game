@@ -35,12 +35,14 @@ export default class Main {
       const y = e.touches[0].clientY;
       
       if (this.currentScene === 'home') {
-        const action = this.homePage.touchHandler(x, y);
-        if (action === 'dice_game') {
-          this.currentScene = 'dice_game';
-        } else if (action === 'poker_menu') {
-          this.currentScene = 'poker_menu';
-        }
+        const actionOrPromise = this.homePage.touchHandler(x, y);
+        Promise.resolve(actionOrPromise).then(action => {
+            if (action === 'dice_game') {
+                this.currentScene = 'dice_game';
+            } else if (action === 'poker_menu') {
+                this.currentScene = 'poker_menu';
+            }
+        });
       } else if (this.currentScene === 'dice_game') {
         const action = this.diceGame.touchHandler(x, y);
         if (action === 'back') {
