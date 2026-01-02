@@ -565,6 +565,7 @@ export default class RoomManager {
             deck: { cards: deck.cards.map(c => ({ suit: c.suit, rank: c.rank })) },
             pot: sbAmount + bbAmount,
             currentBet: bbAmount,
+            minRaise: bbAmount, // Initialize Min Raise
             communityCards: [],
             stage: 'pre-flop',
             currentPlayerIndex: currentPlayerIndex

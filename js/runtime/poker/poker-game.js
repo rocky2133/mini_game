@@ -45,6 +45,10 @@ export default class PokerGame {
         this.avatarImages = {};
         this.showExitModal = false; // State for exit modal
         
+        // Raise UI State
+        this.isRaising = false;
+        this.raiseAmount = 0;
+
         // Scroll State
         this.resultScrollY = 0;
         this.maxScrollY = 0;
@@ -1322,75 +1326,121 @@ export default class PokerGame {
         this.controlZones = []; // Reset zones
 
         if (this.room.game && this.room.game.currentPlayerIndex === meIndex && me.status === 'playing') {
-             const btnCount = 3;
-             const gap = 20;
-             const totalGap = (btnCount + 1) * gap;
-             const btnW = Math.min((w - totalGap) / btnCount, 160); // Max width 160
-             const btnH = 56;
-             const btnY = y + (h - btnH) / 2;
              
-             // Center the button group
-             const groupW = btnCount * btnW + (btnCount - 1) * gap;
-             const startX = x + (w - groupW) / 2;
-             
-             const actions = [
-                 { label: 'Fold', color: THEME.colors.danger, action: 'fold' },
-                 { label: 'Call', color: THEME.colors.primary, action: 'call' },
-                 { label: 'Raise', color: THEME.colors.warning, action: 'raise' }
-             ];
-             
-             actions.forEach((act, i) => {
-                 const btnX = startX + i * (btnW + gap);
+             if (!this.isRaising) {
+                 // Standard Controls
+                 const btnCount = 3;
+                 const gap = 20;
+                 const totalGap = (btnCount + 1) * gap;
+                 const btnW = Math.min((w - totalGap) / btnCount, 160); 
+                 const btnH = 56;
+                 const btnY = y + (h - btnH) / 2;
                  
-                 // Shadow
-                 ctx.shadowColor = 'rgba(0,0,0,0.3)';
-                 ctx.shadowBlur = 8;
-                 ctx.shadowOffsetY = 4;
+                 const groupW = btnCount * btnW + (btnCount - 1) * gap;
+                 const startX = x + (w - groupW) / 2;
                  
-                 // Gradient
-                 const grad = ctx.createLinearGradient(btnX, btnY, btnX, btnY + btnH);
-                 grad.addColorStop(0, act.color);
-                 // Darken slightly for bottom
-                 // Simple hack: assume color is hex, but since we use vars, let's just use solid color or overlay
-                 grad.addColorStop(1, act.color); 
-
-                 ctx.fillStyle = act.color; 
-                 // Pill Shape: Radius = btnH / 2
-                 this.roundRect(ctx, btnX, btnY, btnW, btnH, btnH / 2, true);
+                 const actions = [
+                     { label: 'Fold', color: THEME.colors.danger, action: 'fold' },
+                     { label: 'Call', color: THEME.colors.primary, action: 'call' },
+                     { label: 'Raise', color: THEME.colors.warning, action: 'raise_mode' }
+                 ];
                  
-                 // Inner Shine (Top half)
-                 ctx.shadowBlur = 0;
-                 ctx.shadowOffsetY = 0;
-                 ctx.fillStyle = 'rgba(255,255,255,0.1)';
-                 ctx.beginPath();
-                 ctx.arc(btnX + btnH/2, btnY + btnH/2, btnH/2, Math.PI, 1.5 * Math.PI);
-                 ctx.lineTo(btnX + btnW - btnH/2, btnY);
-                 ctx.arc(btnX + btnW - btnH/2, btnY + btnH/2, btnH/2, 1.5 * Math.PI, 0);
-                 ctx.lineTo(btnX + btnW, btnY + btnH/2);
-                 ctx.lineTo(btnX, btnY + btnH/2);
-                 ctx.closePath();
-                 // This is complex to clip a perfect top half of a rounded rect. 
-                 // Simpler: Just a smaller rounded rect on top with gradient?
-                 // Or just skip the shine for now, the shadow is enough.
+                 actions.forEach((act, i) => {
+                     const btnX = startX + i * (btnW + gap);
+                     this.renderButton(ctx, act.label, btnX, btnY, btnW, btnH, act.color);
+                     this.controlZones.push({ x: btnX, y: btnY, w: btnW, h: btnH, action: act.action });
+                 });
+             } else {
+                 // Raise UI Controls
+                 // Calculate Limits
+                 const currentBet = this.room.game.currentBet || 0;
+                 const myBet = me.bet || 0;
+                 const toCall = currentBet - myBet;
+                 const minRaise = this.room.game.minRaise || 20;
+                 const maxRaise = me.chips - toCall; // Max additional amount I can put in
                  
-                 // Border
-                 ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-                 ctx.lineWidth = 1;
-                 this.roundRect(ctx, btnX, btnY, btnW, btnH, btnH / 2, false, true);
+                 // Initial Value Setup (if 0 or invalid)
+                 if (this.raiseAmount === 0) {
+                     this.raiseAmount = (maxRaise < minRaise) ? maxRaise : minRaise;
+                 }
                  
-                 // Text
-                 ctx.fillStyle = '#fff';
+                 // Layout: 
+                 // Row 1: [-] [Value] [+] [All-in]
+                 // Row 2: [Cancel] [Confirm]
+                 
+                 const row1Y = y + 10;
+                 const row2Y = y + h - 60;
+                 const btnH = 44;
+                 
+                 // Row 1
+                 const opBtnW = 50;
+                 const valW = 100;
+                 const allInW = 70;
+                 const gap = 10;
+                 
+                 const totalRow1W = opBtnW * 2 + valW + allInW + gap * 3;
+                 let currX = x + (w - totalRow1W) / 2;
+                 
+                 // [-]
+                 this.renderButton(ctx, '-', currX, row1Y, opBtnW, btnH, '#607D8B');
+                 this.controlZones.push({ x: currX, y: row1Y, w: opBtnW, h: btnH, action: 'decrease_raise' });
+                 currX += opBtnW + gap;
+                 
+                 // Value
+                 ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                 this.roundRect(ctx, currX, row1Y, valW, btnH, 8, true);
+                 ctx.fillStyle = '#FFEB3B';
                  ctx.font = 'bold 20px Arial';
                  ctx.textAlign = 'center';
                  ctx.textBaseline = 'middle';
-                 ctx.fillText(act.label, btnX + btnW / 2, btnY + btnH / 2);
+                 ctx.fillText(`$${this.raiseAmount}`, currX + valW/2, row1Y + btnH/2);
+                 currX += valW + gap;
                  
-                 // Register Zone
-                 this.controlZones.push({
-                     x: btnX, y: btnY, w: btnW, h: btnH, action: act.action
-                 });
-             });
+                 // [+]
+                 this.renderButton(ctx, '+', currX, row1Y, opBtnW, btnH, '#607D8B');
+                 this.controlZones.push({ x: currX, y: row1Y, w: opBtnW, h: btnH, action: 'increase_raise' });
+                 currX += opBtnW + gap;
+                 
+                 // [All-in]
+                 this.renderButton(ctx, 'All-in', currX, row1Y, allInW, btnH, '#D32F2F');
+                 this.controlZones.push({ x: currX, y: row1Y, w: allInW, h: btnH, action: 'all_in' });
+                 
+                 // Row 2
+                 const actionBtnW = 120;
+                 const actionGap = 20;
+                 const row2StartX = x + (w - (actionBtnW * 2 + actionGap)) / 2;
+                 
+                 // Cancel
+                 this.renderButton(ctx, 'Cancel', row2StartX, row2Y, actionBtnW, btnH, '#757575');
+                 this.controlZones.push({ x: row2StartX, y: row2Y, w: actionBtnW, h: btnH, action: 'cancel_raise' });
+                 
+                 // Confirm
+                 this.renderButton(ctx, 'Confirm', row2StartX + actionBtnW + actionGap, row2Y, actionBtnW, btnH, '#388E3C');
+                 this.controlZones.push({ x: row2StartX + actionBtnW + actionGap, y: row2Y, w: actionBtnW, h: btnH, action: 'confirm_raise' });
+             }
         }
+    }
+
+    renderButton(ctx, label, x, y, w, h, color) {
+        ctx.shadowColor = 'rgba(0,0,0,0.3)';
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetY = 2;
+        
+        ctx.fillStyle = color;
+        this.roundRect(ctx, x, y, w, h, 8, true);
+        
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetY = 0;
+        
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+        ctx.lineWidth = 1;
+        this.roundRect(ctx, x, y, w, h, 8, false, true);
+        
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, x + w/2, y + h/2);
     }
 
     renderSeat(ctx, p, cx, cy, originalIndex, scale = 1.0) {
@@ -1708,14 +1758,47 @@ export default class PokerGame {
                              await RoomManager.getInstance().takeAction(this.docId, this.userId, 'fold');
                          } else if (action === 'call') {
                              await RoomManager.getInstance().takeAction(this.docId, this.userId, 'call');
-                         } else if (action === 'raise') {
-                             // Simple Raise for now (Min Raise or All-in logic needs refinement)
-                             // For this demo, let's just raise double the bet or big blind
+                         } else if (action === 'raise_mode') {
+                             this.isRaising = true;
+                             this.raiseAmount = 0; 
+                             this.render(canvas.getContext('2d'));
+                             return 'raise_mode';
+                         } else if (action === 'cancel_raise') {
+                             this.isRaising = false;
+                             this.render(canvas.getContext('2d'));
+                             return 'cancel_raise';
+                         } else if (action === 'confirm_raise') {
+                             await RoomManager.getInstance().takeAction(this.docId, this.userId, 'raise', this.raiseAmount);
+                             this.isRaising = false;
+                             return 'game_action';
+                         } else if (['increase_raise', 'decrease_raise', 'all_in'].includes(action)) {
+                             // Logic to adjust amount
                              const currentBet = this.room.game.currentBet || 0;
-                             const raiseAmt = Math.max((this.room.bigBlind || 200) * 2, currentBet * 2);
-                             // Ensure we have enough chips
-                             const finalRaise = Math.min(raiseAmt, me.chips);
-                             await RoomManager.getInstance().takeAction(this.docId, this.userId, 'raise', finalRaise);
+                             const myBet = me.bet || 0;
+                             const toCall = currentBet - myBet;
+                             const minRaise = this.room.game.minRaise || 20;
+                             const maxRaise = me.chips - toCall;
+                             
+                             if (this.raiseAmount === 0) this.raiseAmount = (maxRaise < minRaise) ? maxRaise : minRaise;
+                             
+                             if (action === 'all_in') {
+                                 this.raiseAmount = maxRaise;
+                             } else {
+                                 const step = 20; // Fixed step of BB amount usually, or minRaise
+                                 if (action === 'increase_raise') {
+                                     this.raiseAmount += step;
+                                     if (this.raiseAmount > maxRaise) this.raiseAmount = maxRaise;
+                                 } else {
+                                     this.raiseAmount -= step;
+                                     if (this.raiseAmount < minRaise) {
+                                         // If maxRaise < minRaise, we can't go lower than maxRaise (all-in)
+                                          if (maxRaise < minRaise) this.raiseAmount = maxRaise;
+                                          else this.raiseAmount = minRaise;
+                                     }
+                                 }
+                             }
+                             this.render(canvas.getContext('2d'));
+                             return 'adjust_raise';
                          }
                          return 'game_action';
                      }
