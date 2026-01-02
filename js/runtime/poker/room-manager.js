@@ -404,6 +404,23 @@ export default class RoomManager {
       }
       game.currentPlayerIndex = nextIndex;
 
+      // Check for Auto-Advance (All-in Scenario)
+      // If active players > 1 AND (players with chips <= 1)
+      // We skip betting and move to next stage immediately
+      if (game.stage !== 'showdown') {
+          const activePlayers = players.filter(p => p.status === 'playing');
+          const canBetPlayers = activePlayers.filter(p => p.chips > 0);
+          
+          // If only 1 or 0 players can bet, no further betting is possible
+          // (The one player cannot bet against themselves)
+          if (activePlayers.length > 1 && canBetPlayers.length <= 1) {
+               // Recursively call nextStage to fast-forward
+               // This will execute immediately, mutating game/players
+               // The final DB update in takeAction will reflect the final state
+               this.nextStage(docId, game, players);
+          }
+      }
+
       // Trigger Bot if first player of new round is bot
       // Handled by takeAction's post-update trigger
   }

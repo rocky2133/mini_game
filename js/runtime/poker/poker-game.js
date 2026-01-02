@@ -1354,14 +1354,17 @@ export default class PokerGame {
                  // Raise UI Controls
                  // Calculate Limits
                  const currentBet = this.room.game.currentBet || 0;
-                 const myBet = me.bet || 0;
-                 const toCall = currentBet - myBet;
                  const minRaise = this.room.game.minRaise || 20;
-                 const maxRaise = me.chips - toCall; // Max additional amount I can put in
+                 
+                 const myBet = me.bet || 0;
+                 const myTotalChips = me.chips + myBet; // Total stack (chips behind + already bet)
+                 
+                 const minTotalBet = currentBet + minRaise;
+                 const maxTotalBet = myTotalChips;
                  
                  // Initial Value Setup (if 0 or invalid)
                  if (this.raiseAmount === 0) {
-                     this.raiseAmount = (maxRaise < minRaise) ? maxRaise : minRaise;
+                     this.raiseAmount = (maxTotalBet < minTotalBet) ? maxTotalBet : minTotalBet;
                  }
                  
                  // Layout: 
@@ -1768,32 +1771,42 @@ export default class PokerGame {
                              this.render(canvas.getContext('2d'));
                              return 'cancel_raise';
                          } else if (action === 'confirm_raise') {
-                             await RoomManager.getInstance().takeAction(this.docId, this.userId, 'raise', this.raiseAmount);
+                             const currentBet = this.room.game.currentBet || 0;
+                             // Calculate increment (Raise Amount ON TOP of current bet)
+                             // User selected "Raise To" amount (Total Bet)
+                             let increment = this.raiseAmount - currentBet;
+                             if (increment < 0) increment = 0; // Safety
+                             
+                             await RoomManager.getInstance().takeAction(this.docId, this.userId, 'raise', increment);
                              this.isRaising = false;
                              return 'game_action';
                          } else if (['increase_raise', 'decrease_raise', 'all_in'].includes(action)) {
                              // Logic to adjust amount
                              const currentBet = this.room.game.currentBet || 0;
-                             const myBet = me.bet || 0;
-                             const toCall = currentBet - myBet;
                              const minRaise = this.room.game.minRaise || 20;
-                             const maxRaise = me.chips - toCall;
                              
-                             if (this.raiseAmount === 0) this.raiseAmount = (maxRaise < minRaise) ? maxRaise : minRaise;
+                             const meIndex = this.room.players.findIndex(p => p.id === this.userId);
+                             const me = this.room.players[meIndex];
+                             const myBet = me.bet || 0;
+                             const myTotalChips = me.chips + myBet;
+                             
+                             const minTotalBet = currentBet + minRaise;
+                             const maxTotalBet = myTotalChips;
+                             
+                             if (this.raiseAmount === 0) this.raiseAmount = (maxTotalBet < minTotalBet) ? maxTotalBet : minTotalBet;
                              
                              if (action === 'all_in') {
-                                 this.raiseAmount = maxRaise;
+                                 this.raiseAmount = maxTotalBet;
                              } else {
-                                 const step = 20; // Fixed step of BB amount usually, or minRaise
+                                 const step = this.room.game.minRaise || 20; // Use minRaise as step
                                  if (action === 'increase_raise') {
                                      this.raiseAmount += step;
-                                     if (this.raiseAmount > maxRaise) this.raiseAmount = maxRaise;
+                                     if (this.raiseAmount > maxTotalBet) this.raiseAmount = maxTotalBet;
                                  } else {
                                      this.raiseAmount -= step;
-                                     if (this.raiseAmount < minRaise) {
-                                         // If maxRaise < minRaise, we can't go lower than maxRaise (all-in)
-                                          if (maxRaise < minRaise) this.raiseAmount = maxRaise;
-                                          else this.raiseAmount = minRaise;
+                                     if (this.raiseAmount < minTotalBet) {
+                                          if (maxTotalBet < minTotalBet) this.raiseAmount = maxTotalBet;
+                                          else this.raiseAmount = minTotalBet;
                                      }
                                  }
                              }
