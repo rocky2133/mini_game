@@ -435,6 +435,7 @@ export default class PokerGame {
 
     renderResultPage(ctx) {
         // Translation Map for Hand Types
+
         const HAND_TYPE_MAP = {
             'High Card': '高牌',
             'Pair': '对子',
@@ -497,7 +498,41 @@ export default class PokerGame {
         
         currentY += cardH + 20;
 
-        // 2. Player Hand Grid (2 Columns)
+        // --- AI Comment Section ---
+        if (this.room.game && this.room.game.aiComment) {
+            ctx.fillStyle = '#81D4FA'; // Light Blue
+            ctx.font = 'italic 16px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            const comment = "本局锐评: " + this.room.game.aiComment;
+            const maxWidth = SCREEN_WIDTH - 60;
+            const lineHeight = 24;
+            
+            // Simple char wrap for Chinese
+            let line = '';
+            const lines = [];
+            
+            for (let n = 0; n < comment.length; n++) {
+                const testLine = line + comment[n];
+                const metrics = ctx.measureText(testLine);
+                const testWidth = metrics.width;
+                if (testWidth > maxWidth && n > 0) {
+                    lines.push(line);
+                    line = comment[n];
+                } else {
+                    line = testLine;
+                }
+            }
+            lines.push(line);
+            
+            lines.forEach((l) => {
+                ctx.fillText(l, SCREEN_WIDTH / 2, currentY);
+                currentY += lineHeight;
+            });
+            
+            currentY += 20; 
+        }
         const activePlayers = this.room.players.filter(p => p.status === 'playing' || (p.status === 'folded' && winners.some(w => w.id === p.id)));
         
         const gridX = 20;
@@ -1713,9 +1748,12 @@ export default class PokerGame {
                       if (!result.success) {
                           wx.showToast({ title: result.message, icon: 'none' });
                       } else {
-                          this.room.status = 'waiting';
-                          delete this.room.game; 
-                          this.render(canvas.getContext('2d'));
+                          // Check if room still exists (I might have been removed)
+                          if (this.room) {
+                              this.room.status = 'waiting';
+                              delete this.room.game; 
+                              this.render(canvas.getContext('2d'));
+                          }
                       }
                   }
              }

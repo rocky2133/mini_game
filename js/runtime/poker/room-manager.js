@@ -303,6 +303,12 @@ export default class RoomManager {
             game.winner = winner;
             game.winReason = 'Others Folded';
             game.winners = [winner];
+            
+            // Hide winner's hand as per requirement (no show if others folded)
+            winner.hand = null; 
+
+            // Trigger AI Comment for Early Win
+            this.triggerAIComment(docId, game, players);
         } else {
             // Find next playing player
             // Skip non-playing players AND players with 0 chips (All-in)
@@ -468,28 +474,45 @@ export default class RoomManager {
   }
 
   triggerAIComment(docId, game, players) {
+      console.log('[RoomManager] triggerAIComment called. Winners:', game.winners ? game.winners.length : 0);
       if (game.winners && game.winners.length > 0) {
           const winner = game.winners[0];
           const losers = players.filter(p => p.status === 'playing' && !game.winners.includes(p));
           
-          let prompt = `Game Result: Winner is ${winner.name} with ${winner.handResult ? winner.handResult.name : 'good hand'}. `;
-          if (losers.length > 0) {
-              const loser = losers[0];
-              prompt += `Loser is ${loser.name} with ${loser.handResult ? loser.handResult.name : 'worse hand'}. `;
+          let prompt = '';
+          if (game.winReason === 'Others Folded') {
+              prompt = `本局游戏结束，获胜者是 ${winner.name}。由于其他玩家全部弃牌，${winner.name} 不战而胜。请用中文生成一句简短、幽默、辛辣的点评（一句话），调侃一下这种“赢了寂寞”或者“不战而屈人之兵”的局面。`;
+          } else {
+              const winnerHand = winner.handResult ? winner.handResult.name : '好牌';
+              prompt = `本局游戏结束，获胜者是 ${winner.name}，最终牌型是 ${winnerHand}。`;
+              if (losers.length > 0) {
+                  const loser = losers[0];
+                  const loserHand = loser.handResult ? loser.handResult.name : '略逊一筹';
+                  prompt += `输家是 ${loser.name}，牌型是 ${loserHand}。`;
+              }
+              prompt += '请用中文生成一句简短、幽默、辛辣的点评（一句话），像一个毒舌解说员那样评价这场对决。';
           }
-          prompt += "Write a short, funny, sharp comment (1 sentence) about this result.";
           
+          console.log('[RoomManager] Triggering AI comment with prompt:', prompt);
+
           // Call AI Async
           AIManager.getInstance().generateGameComment(prompt).then(comment => {
+              console.log('[RoomManager] Received AI comment:', comment);
               if (comment) {
                    // Update room with comment
                    this.rooms.doc(docId).update({
                        data: {
                            'game.aiComment': comment
                        }
+                   }).then(() => {
+                       console.log('[RoomManager] Updated room with AI comment');
+                   }).catch(err => {
+                       console.error('[RoomManager] Failed to update room with AI comment:', err);
                    });
               }
           });
+      } else {
+          console.log('[RoomManager] No winners, skipping AI comment');
       }
   }
 
@@ -549,18 +572,39 @@ export default class RoomManager {
         const initialCount = players.length;
         players = players.filter(p => p.chips > 0 && !p.isAway);
         
+        let updateData = {
+            status: 'waiting',
+            players: players,
+            game: _.remove() // Remove game object
+        };
+
         if (players.length < initialCount) {
-             // Re-index seats if players removed?
-             // Or just let them be removed. The startGame logic checks players.length >= 2.
+             // Re-index seats
              players.forEach((p, i) => p.seatIndex = i);
+
+             // Check if Host was removed
+             // We can check if the current hostId is still in the players list
+             const currentHostId = room.hostId;
+             const isHostStillIn = players.some(p => p.id === currentHostId);
+             
+             if (!isHostStillIn && players.length > 0) {
+                 // Assign new host to the first player
+                 players[0].isHost = true;
+                 updateData.hostId = players[0].id;
+                 console.log(`[RoomManager] Host removed. New host is ${players[0].name}`);
+             } else if (players.length === 0) {
+                 // If everyone is removed, we might want to delete the room?
+                 // For now, let's just leave it empty, or maybe remove it.
+                 // If we remove it, the update below will fail if doc is gone? 
+                 // Actually update will just do nothing or fail.
+                 // Let's remove the room if empty.
+                 await this.rooms.doc(docId).remove();
+                 return { success: true };
+             }
         }
 
         await this.rooms.doc(docId).update({
-            data: {
-                status: 'waiting',
-                players: players,
-                game: _.remove() // Remove game object
-            }
+            data: updateData
         });
         
         return { success: true };
